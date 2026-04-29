@@ -86,6 +86,33 @@ export class RemembrBackend implements MemoryBackend {
     return res.results.map(searchResultToMemory)
   }
 
+  async searchByCommitSet(
+    _commits: string[],
+    lineageFallback: string[],
+    additionalTags?: MindrTag[],
+  ): Promise<MindrMemory[]> {
+    // Remembr: SHA list is too large for API; use branch_lineage tags as the primary handle.
+    const searchTags = lineageFallback.map((b) => `mindr:branch_lineage:${b}`)
+    if (searchTags.length === 0) return []
+
+    const res = await this.client.search({
+      query: '',
+      tags: searchTags,
+      limit: 200,
+      searchMode: 'keyword',
+    })
+
+    let results = res.results.map(searchResultToMemory)
+
+    if (additionalTags && additionalTags.length > 0) {
+      results = results.filter((m) =>
+        additionalTags.every((at) => m.tags.some((mt) => mt.key === at.key && mt.value === at.value)),
+      )
+    }
+
+    return results
+  }
+
   // Remembr has no single-episode fetch endpoint; callers should use store() return value.
   async getById(_memoryId: string): Promise<MindrMemory | null> {
     return null

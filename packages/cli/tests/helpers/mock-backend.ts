@@ -61,6 +61,25 @@ export class MockBackend implements MemoryBackend {
     }
     return limit != null ? result.slice(0, limit) : result
   }
+
+  async searchByCommitSet(
+    commits: string[],
+    lineageFallback: string[],
+    additionalTags?: MindrTag[],
+  ): Promise<MindrMemory[]> {
+    const commitSet = new Set(commits)
+    let results = this.memories.filter((m) => {
+      const hasCommit = m.tags.some((t) => t.key === 'git_commit' && commitSet.has(t.value))
+      const hasBranch = m.tags.some((t) => t.key === 'branch_lineage' && lineageFallback.includes(t.value))
+      return hasCommit || hasBranch
+    })
+    if (additionalTags && additionalTags.length > 0) {
+      results = results.filter((m) =>
+        additionalTags.every((at) => m.tags.some((mt) => mt.key === at.key && mt.value === at.value)),
+      )
+    }
+    return results
+  }
 }
 
 /** Capture everything written to process.stdout during fn(). */

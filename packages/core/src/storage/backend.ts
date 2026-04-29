@@ -40,4 +40,15 @@ export interface MemoryBackend {
   forget(memoryId: string): Promise<void>
   listByTags(tags: MindrTag[], limit?: number): Promise<MindrMemory[]>
   getById(memoryId: string): Promise<MindrMemory | null>
+  /**
+   * Find memories whose `git_commit:<sha>` tag matches any SHA in `commits`,
+   * OR whose `branch_lineage:<branch>` tag matches any branch in `lineageFallback`.
+   * Optionally filter results to those also matching every tag in `additionalTags`.
+   * Used for branch-scoped context queries; avoids ghost memories on merge/rebase.
+   */
+  searchByCommitSet(
+    commits: string[],
+    lineageFallback: string[],
+    additionalTags?: MindrTag[],
+  ): Promise<MindrMemory[]>
 }

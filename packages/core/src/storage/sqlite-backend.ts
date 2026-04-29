@@ -193,6 +193,53 @@ export class SqliteBackend implements MemoryBackend {
     return rows.map(rowToMemory)
   }
 
+  async searchByCommitSet(
+    commits: string[],
+    lineageFallback: string[],
+    additionalTags?: MindrTag[],
+  ): Promise<MindrMemory[]> {
+    // Build the full list of tag strings to match (OR semantics across the set).
+    const commitTagStrings = commits.map((sha) => `mindr:git_commit:${sha}`)
+    const lineageTagStrings = lineageFallback.map((b) => `mindr:branch_lineage:${b}`)
+    const allTagStrings = [...commitTagStrings, ...lineageTagStrings]
+
+    if (allTagStrings.length === 0) return []
+
+    // SQLite has a ~999-parameter limit per statement; chunk large sets.
+    const CHUNK = 900
+    const seen = new Set<string>()
+    const results: MindrMemory[] = []
+
+    for (let i = 0; i < allTagStrings.length; i += CHUNK) {
+      const chunk = allTagStrings.slice(i, i + CHUNK)
+      const placeholders = chunk.map(() => '?').join(', ')
+      const rows = this.db
+        .prepare(
+          `SELECT DISTINCT m.id, m.content, m.role, m.tags, m.metadata, m.created_at, m.session_id
+           FROM memories m, json_each(m.tags) t
+           WHERE t.value IN (${placeholders})
+             AND m.deleted_at IS NULL
+           ORDER BY m.created_at DESC`,
+        )
+        .all(...chunk) as MemoryRow[]
+
+      for (const row of rows) {
+        if (!seen.has(row.id)) {
+          seen.add(row.id)
+          results.push(rowToMemory(row))
+        }
+      }
+    }
+
+    if (additionalTags && additionalTags.length > 0) {
+      return results.filter((m) =>
+        additionalTags.every((at) => m.tags.some((mt) => mt.key === at.key && mt.value === at.value)),
+      )
+    }
+
+    return results
+  }
+
   async getById(memoryId: string): Promise<MindrMemory | null> {
     const row = this.db
       .prepare(

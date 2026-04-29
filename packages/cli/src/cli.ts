@@ -12,6 +12,7 @@ import { addConfigCommands } from './commands/config.js'
 import { addMigrateCommands } from './commands/migrate.js'
 import { addDecisionsCommands } from './commands/decisions.js'
 import { addReplayCommands } from './commands/replay.js'
+import { addBranchCommands } from './commands/branch.js'
 
 const program = new Command()
 program.name('mindr').description('Memory-augmented dev tooling').version('0.0.1')
@@ -22,6 +23,7 @@ addForgetCommand(program)
 addMemoryCommands(program)
 addDecisionsCommands(program)
 addReplayCommands(program)
+addBranchCommands(program)
 addStatusCommand(program)
 addConfigCommands(program)
 addMigrateCommands(program)

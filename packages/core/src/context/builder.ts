@@ -1,7 +1,8 @@
 // Session context builder — token-aware, priority-ordered summary for AI agents.
 
-import type { MemoryBackend } from '../storage/backend.js'
+import type { MemoryBackend, MindrMemory } from '../storage/backend.js'
 import type { ConventionProfile } from '../conventions/detector.js'
+import { branchMemoryQuery } from '../git/lineage.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -13,6 +14,10 @@ export interface SessionContextOptions {
   max_tokens?: number
   recentDecisions?: number    // default 5
   recentCommitDays?: number   // default 30
+  /** Limit context to memories reachable from this branch (requires repoRoot). */
+  branch?: string
+  /** Absolute path to the repository root; required when `branch` is set. */
+  repoRoot?: string
 }
 
 export interface HotModule {
@@ -94,8 +99,10 @@ function renderWarnings(warnings: SessionContext['warnings']): string {
 // Data queries
 // ---------------------------------------------------------------------------
 
-async function fetchConventions(backend: MemoryBackend): Promise<ConventionProfile[]> {
-  const mems = await backend.listByTags([{ key: 'type', value: 'convention' }])
+type ListByType = (type: string) => Promise<MindrMemory[]>
+
+async function fetchConventions(listByType: ListByType): Promise<ConventionProfile[]> {
+  const mems = await listByType('convention')
   mems.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   const latestByLang = new Map<string, ConventionProfile>()
   for (const m of mems) {
@@ -109,13 +116,10 @@ async function fetchConventions(backend: MemoryBackend): Promise<ConventionProfi
     .map(([, v]) => v)
 }
 
-async function fetchHotModules(
-  backend: MemoryBackend,
-  days: number,
-): Promise<HotModule[]> {
+async function fetchHotModules(listByType: ListByType, days: number): Promise<HotModule[]> {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - days)
-  const mems = await backend.listByTags([{ key: 'type', value: 'context' }])
+  const mems = await listByType('context')
   const recent = mems.filter((m) => new Date(m.createdAt) >= cutoff)
   const counts = new Map<string, number>()
   for (const m of recent) {
@@ -128,8 +132,11 @@ async function fetchHotModules(
     .map(([module, touches]) => ({ module, touches }))
 }
 
-async function fetchDecisions(backend: MemoryBackend, limit: number): Promise<SessionContext['decisions']> {
-  const mems = await backend.listByTags([{ key: 'type', value: 'decision' }])
+async function fetchDecisions(
+  listByType: ListByType,
+  limit: number,
+): Promise<SessionContext['decisions']> {
+  const mems = await listByType('decision')
   return mems
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, limit)
@@ -142,8 +149,8 @@ async function fetchDecisions(backend: MemoryBackend, limit: number): Promise<Se
     }))
 }
 
-async function fetchWarnings(backend: MemoryBackend): Promise<SessionContext['warnings']> {
-  const mems = await backend.listByTags([{ key: 'type', value: 'debt' }])
+async function fetchWarnings(listByType: ListByType): Promise<SessionContext['warnings']> {
+  const mems = await listByType('debt')
   return mems
     .sort((a, b) => a.content.localeCompare(b.content))
     .map((m) => ({
@@ -167,14 +174,29 @@ export async function buildSessionContext(
     max_tokens,
     recentDecisions = 5,
     recentCommitDays = 30,
+    branch,
+    repoRoot,
   } = options
+
+  // When branch + repoRoot are provided, scope all queries to commits reachable
+  // from that branch (exact SHA match OR branch_lineage fallback).
+  let listByType: ListByType
+  if (branch && repoRoot) {
+    const query = await branchMemoryQuery(repoRoot, branch)
+    listByType = (type: string) =>
+      backend.searchByCommitSet(query.commits, query.lineageFallback, [
+        { key: 'type', value: type },
+      ])
+  } else {
+    listByType = (type: string) => backend.listByTags([{ key: 'type', value: type }])
+  }
 
   // Gather all data in parallel
   const [profiles, hotModules, decisions, warnings] = await Promise.all([
-    fetchConventions(backend),
-    fetchHotModules(backend, recentCommitDays),
-    fetchDecisions(backend, recentDecisions),
-    fetchWarnings(backend),
+    fetchConventions(listByType),
+    fetchHotModules(listByType, recentCommitDays),
+    fetchDecisions(listByType, recentDecisions),
+    fetchWarnings(listByType),
   ])
 
   // Build derived structures

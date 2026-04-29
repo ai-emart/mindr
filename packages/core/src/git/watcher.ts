@@ -182,10 +182,18 @@ export async function onCommit(
   backend: MemoryBackend,
 ): Promise<CommitProcessingResult> {
   const git = simpleGit({ baseDir: repoRoot })
-  const [commitInfo, diffStat] = await Promise.all([
+  const [commitInfo, diffStat, branchRaw] = await Promise.all([
     getCommitInfo(git, sha),
     getDiffStat(git, sha),
+    git.revparse(['--abbrev-ref', 'HEAD']).catch(() => 'unknown'),
   ])
+  const branch = branchRaw.trim()
+
+  // Tags added to every memory written for this commit.
+  const lineageTags: Array<{ key: string; value: string }> = [
+    { key: 'git_commit', value: sha },
+    { key: 'branch_lineage', value: branch },
+  ]
 
   // Fetch unified diff once — used for TODO extraction, import detection, version diffs.
   const diff = await git.raw(['show', '-U0', '--pretty=format:', sha])
@@ -226,7 +234,7 @@ export async function onCommit(
     await backend.store({
       content: `Decision: ${subject}`,
       role: 'system',
-      tags: decisionTags({ module: primaryModule, commit: sha, confidence: String(confidence) }),
+      tags: [...decisionTags({ module: primaryModule, commit: sha, confidence: String(confidence) }), ...lineageTags],
       metadata: {
         sha,
         author: commitInfo.author,
@@ -256,7 +264,7 @@ export async function onCommit(
     await backend.store({
       content: `${todo.keyword} at ${todo.file}:${todo.line} — ${todo.text}`,
       role: 'system',
-      tags: debtTags({ module: todoModule }),
+      tags: [...debtTags({ module: todoModule }), ...lineageTags],
       metadata: { sha, file: todo.file, line: todo.line, keyword: todo.keyword },
     })
     result.debtMemories++
@@ -268,10 +276,7 @@ export async function onCommit(
   await backend.store({
     content: `Commit ${sha.slice(0, 8)}: ${subject}. Changed ${diffStat.filesTouched} file(s) (+${diffStat.totalAdditions}/-${diffStat.totalDeletions}) in: ${dirSummary}`,
     role: 'system',
-    tags: [
-      ...contextTags({ module: primaryModule }),
-      { key: 'git_commit', value: sha },
-    ],
+    tags: [...contextTags({ module: primaryModule }), ...lineageTags],
     metadata: {
       sha,
       author: commitInfo.author,
@@ -328,12 +333,15 @@ export async function onCommit(
       await backend.store({
         content: `Convention profile for ${profile.language}: ${summary}`,
         role: 'system',
-        tags: conventionTags({
-          module: primaryModule,
-          language: profile.language,
-          pattern: dominant?.pattern,
-          score: dominant?.score,
-        }),
+        tags: [
+          ...conventionTags({
+            module: primaryModule,
+            language: profile.language,
+            pattern: dominant?.pattern,
+            score: dominant?.score,
+          }),
+          ...lineageTags,
+        ],
         metadata: { sha, language: profile.language, profile },
       })
       result.conventionMemories++

@@ -49,8 +49,11 @@ export {
 
 export { installPostCommitHook, uninstallPostCommitHook } from './git/hooks.js'
 
-export type { CommitProcessingResult } from './git/watcher.js'
-export { onCommit } from './git/watcher.js'
+export type { CommitProcessingResult, DecisionTrigger } from './git/watcher.js'
+export { onCommit, computeConfidence, extractRationale } from './git/watcher.js'
+
+export type { BranchMemoryQuery } from './git/lineage.js'
+export { reachableCommits, branchMemoryQuery } from './git/lineage.js'
 
 export type {
   Convention,
