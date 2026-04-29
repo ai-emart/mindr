@@ -2,12 +2,15 @@
 
 exports[`SDK public surface > Mindr class exposes expected instance methods 1`] = `
 [
+  "checkpointSession",
   "close",
   "forget",
+  "getContextHealth",
   "getConventions",
   "getDebt",
   "getDecisions",
   "getSessionContext",
+  "getStats",
   "getStatus",
   "migrateSqliteToRemembr",
   "query",

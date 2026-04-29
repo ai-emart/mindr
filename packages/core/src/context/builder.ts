@@ -3,6 +3,13 @@
 import type { MemoryBackend, MindrMemory } from '../storage/backend.js'
 import type { ConventionProfile } from '../conventions/detector.js'
 import { branchMemoryQuery } from '../git/lineage.js'
+import { scoreMemoryQuality } from '../quality/score.js'
+
+// ---------------------------------------------------------------------------
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4)
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,10 +58,6 @@ type SectionName = keyof typeof SECTION_PRIORITY
 // ---------------------------------------------------------------------------
 // Token estimation (rough: 1 token ≈ 4 chars)
 // ---------------------------------------------------------------------------
-
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4)
-}
 
 // ---------------------------------------------------------------------------
 // Section renderers
@@ -138,7 +141,10 @@ async function fetchDecisions(
 ): Promise<SessionContext['decisions']> {
   const mems = await listByType('decision')
   return mems
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .sort((a, b) => {
+      const quality = scoreMemoryQuality(b).total - scoreMemoryQuality(a).total
+      return quality !== 0 ? quality : b.createdAt.localeCompare(a.createdAt)
+    })
     .slice(0, limit)
     .map((m) => ({
       date: m.metadata?.['date']
@@ -149,10 +155,28 @@ async function fetchDecisions(
     }))
 }
 
-async function fetchWarnings(listByType: ListByType): Promise<SessionContext['warnings']> {
+async function fetchWarnings(listByType: ListByType, files?: string[]): Promise<SessionContext['warnings']> {
   const mems = await listByType('debt')
-  return mems
-    .sort((a, b) => a.content.localeCompare(b.content))
+  const fileSet = files && files.length > 0 ? new Set(files) : null
+  const filtered = fileSet
+    ? mems.filter((m) => typeof m.metadata?.['file'] === 'string' && fileSet.has(String(m.metadata['file'])))
+    : mems
+  const severityRank = (m: MindrMemory): number => {
+    const severity = m.tags.find((t) => t.key === 'severity')?.value ?? m.metadata?.['severity']
+    if (severity === 'high') return 3
+    if (severity === 'medium') return 2
+    return 1
+  }
+  const perFile = new Map<string, number>()
+  return filtered
+    .sort((a, b) => severityRank(b) - severityRank(a) || a.content.localeCompare(b.content))
+    .filter((m) => {
+      const file = typeof m.metadata?.['file'] === 'string' ? String(m.metadata['file']) : 'unknown'
+      const count = perFile.get(file) ?? 0
+      if (count >= 3) return false
+      perFile.set(file, count + 1)
+      return true
+    })
     .map((m) => ({
       keyword: m.metadata?.['keyword'] ? String(m.metadata['keyword']) : 'DEBT',
       location: m.metadata?.['file']
@@ -176,6 +200,7 @@ export async function buildSessionContext(
     recentCommitDays = 30,
     branch,
     repoRoot,
+    files,
   } = options
 
   // When branch + repoRoot are provided, scope all queries to commits reachable
@@ -196,7 +221,7 @@ export async function buildSessionContext(
     fetchConventions(listByType),
     fetchHotModules(listByType, recentCommitDays),
     fetchDecisions(listByType, recentDecisions),
-    fetchWarnings(listByType),
+    fetchWarnings(listByType, files),
   ])
 
   // Build derived structures

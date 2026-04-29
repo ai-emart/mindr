@@ -1,5 +1,5 @@
 import type { Command } from 'commander'
-import { getRepoRoot, loadConfig, getBackend, MEMORY_TYPES } from '@ai-emart/mindr-core'
+import { getRepoRoot, loadConfig, getBackend, MEMORY_TYPES, scoreMemoryQuality } from '@ai-emart/mindr-core'
 import type { MemoryBackend, MindrMemory, MindrTag } from '@ai-emart/mindr-core'
 import Table from 'cli-table3'
 import chalk from 'chalk'
@@ -14,6 +14,7 @@ export interface MemoryListOpts {
   since?: string
   limit?: string
   json?: boolean
+  sort?: string
 }
 
 function tagValue(mem: MindrMemory, key: string): string {
@@ -36,6 +37,9 @@ export async function runMemoryList(opts: MemoryListOpts, deps: MemoryListDeps):
     const since = new Date(opts.since)
     memories = memories.filter((m) => new Date(m.createdAt) >= since)
   }
+  if (opts.sort === 'quality') {
+    memories = memories.sort((a, b) => scoreMemoryQuality(b).total - scoreMemoryQuality(a).total)
+  }
 
   if (opts.json) {
     process.stdout.write(JSON.stringify(memories, null, 2) + '\n')
@@ -53,9 +57,10 @@ export async function runMemoryList(opts: MemoryListOpts, deps: MemoryListDeps):
       chalk.cyan('Type'),
       chalk.cyan('Module'),
       chalk.cyan('Created'),
+      chalk.cyan('Q'),
       chalk.cyan('Content'),
     ],
-    colWidths: [14, 12, 10, 12, 46],
+    colWidths: [14, 12, 10, 12, 5, 41],
     wordWrap: true,
   })
 
@@ -66,11 +71,22 @@ export async function runMemoryList(opts: MemoryListOpts, deps: MemoryListDeps):
       tagValue(mem, 'type'),
       tagValue(mem, 'module'),
       mem.createdAt.slice(0, 10),
+      String(scoreMemoryQuality(mem).total),
       content,
     ])
   }
 
   process.stdout.write(table.toString() + '\n')
+}
+
+export async function runMemoryInspect(id: string, deps: MemoryListDeps): Promise<void> {
+  const backend =
+    deps.backend ??
+    getBackend(loadConfig(await getRepoRoot(process.cwd())))
+  const memory = await backend.getById(id)
+  if (!memory) throw new Error(`Memory not found: ${id}`)
+  const qualityBreakdown = scoreMemoryQuality(memory)
+  process.stdout.write(JSON.stringify({ ...memory, qualityScore: qualityBreakdown.total, qualityBreakdown }, null, 2) + '\n')
 }
 
 export function addMemoryCommands(program: Command, deps: MemoryListDeps = {}): void {
@@ -83,9 +99,20 @@ export function addMemoryCommands(program: Command, deps: MemoryListDeps = {}): 
     .option('--module <module>', 'Filter by module')
     .option('--since <date>', 'Filter by date (ISO or YYYY-MM-DD)')
     .option('--limit <n>', 'Max results', '50')
+    .option('--sort <field>', 'Sort field (quality)')
     .option('--json', 'Output as JSON')
     .action(async (opts: MemoryListOpts) => {
       await runMemoryList(opts, deps).catch((err: unknown) => {
+        process.stderr.write(`${chalk.red('✗')} ${String(err)}\n`)
+        process.exit(1)
+      })
+    })
+
+  mem
+    .command('inspect <id>')
+    .description('Inspect a memory and its quality breakdown')
+    .action(async (id: string) => {
+      await runMemoryInspect(id, deps).catch((err: unknown) => {
         process.stderr.write(`${chalk.red('✗')} ${String(err)}\n`)
         process.exit(1)
       })

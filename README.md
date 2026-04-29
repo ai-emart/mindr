@@ -99,7 +99,7 @@ Add to `.cursor/mcp.json`:
 }
 ```
 
-The MCP server exposes three tools: `mindr:get_context`, `mindr:remember`, `mindr:query`.
+The MCP server exposes context, memory, bug-pattern, context-health, checkpoint, and query tools.
 See [`examples/`](examples/) for copy-paste config files.
 
 ---
@@ -142,7 +142,14 @@ mindr remember <content>               # store a manual memory
   --tag <k:v>                          # repeatable
 mindr forget <id>                      # soft-delete a memory by ID
 mindr memory list                      # browse memories (table view)
-  --type --module --since --limit --json
+  --type --module --since --limit --sort quality --json
+mindr bugs list --module <name>        # known structural bug patterns
+mindr debt list --severity high        # technical debt table
+mindr debt report                      # markdown debt summary
+mindr session health <id>              # context drift score
+mindr session checkpoint <id>          # write checkpoint memory
+mindr stats --session <id>             # token usage and honest savings range
+mindr ui --port 3131                   # local dashboard
 mindr generate agents-md               # generate AGENTS.md from observed patterns
 mindr generate claude-md               # generate CLAUDE.md
 mindr generate --all                   # generate both

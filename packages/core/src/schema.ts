@@ -8,6 +8,8 @@ export const MEMORY_TYPES = [
   'convention',
   'bug_pattern',
   'debt',
+  'debt_resolved',
+  'session_checkpoint',
   'note',
   'context',
 ] as const
@@ -50,6 +52,7 @@ export function bugTags(opts: {
   module: string
   language?: string
   fingerprint?: string
+  fixCommit?: string
 }): MindrTag[] {
   const tags: MindrTag[] = [
     { key: 'type', value: 'bug_pattern' },
@@ -57,6 +60,7 @@ export function bugTags(opts: {
   ]
   if (opts.language) tags.push({ key: 'language', value: opts.language })
   if (opts.fingerprint) tags.push({ key: 'fingerprint', value: opts.fingerprint })
+  if (opts.fixCommit) tags.push({ key: 'fix_commit', value: opts.fixCommit })
   return tags
 }
 
@@ -76,12 +80,22 @@ export function conventionTags(opts: {
   return tags
 }
 
-export function debtTags(opts: { module: string; severity?: string }): MindrTag[] {
+export function debtTags(opts: { module: string; severity?: string; debtId?: string }): MindrTag[] {
   const tags: MindrTag[] = [
     { key: 'type', value: 'debt' },
     { key: 'module', value: opts.module },
   ]
   if (opts.severity) tags.push({ key: 'severity', value: opts.severity })
+  if (opts.debtId) tags.push({ key: 'debt_id', value: opts.debtId })
+  return tags
+}
+
+export function sessionCheckpointTags(opts: { sessionId: string; module?: string }): MindrTag[] {
+  const tags: MindrTag[] = [
+    { key: 'type', value: 'session_checkpoint' },
+    { key: 'session', value: opts.sessionId },
+  ]
+  if (opts.module) tags.push({ key: 'module', value: opts.module })
   return tags
 }
 

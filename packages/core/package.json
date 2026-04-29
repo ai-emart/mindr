@@ -25,6 +25,7 @@
     "@iarna/toml": "^2.2.5",
     "@remembr/sdk": "^0.2.0",
     "better-sqlite3": "^12.9.0",
+    "gpt-tokenizer": "^2.9.0",
     "simple-git": "^3.36.0",
     "tree-sitter": "0.21.1",
     "tree-sitter-go": "0.23.4",

@@ -14,6 +14,10 @@ import {
   queryConventions,
   queryDecisions,
   queryDebt,
+  getContextHealth as coreGetContextHealth,
+  checkpointSession as coreCheckpointSession,
+  getStats as coreGetStats,
+  scoreMemoryQuality,
   generateAgentsMd as coreGenerateAgentsMd,
   generateClaudeMd as coreGenerateClaudeMd,
   MEMORY_TYPES,
@@ -29,6 +33,8 @@ import type {
   MindrTag,
   MemoryType,
   HotModule,
+  MindrStats,
+  ContextHealthResult,
 } from '@ai-emart/mindr-core'
 
 // ---------------------------------------------------------------------------
@@ -45,6 +51,8 @@ export type {
   SessionContextOptions,
   ConventionProfile,
   HotModule,
+  MindrStats,
+  ContextHealthResult,
 }
 export { MEMORY_TYPES }
 
@@ -108,6 +116,8 @@ export interface DecisionsOptions {
 export interface DebtOptions {
   /** Filter to a specific module. */
   module?: string
+  severity?: 'high' | 'medium' | 'low'
+  minAge?: number
   /** Maximum results. */
   limit?: number
 }
@@ -177,6 +187,7 @@ export interface DebtItem {
   line?: number
   /** Module this debt belongs to. */
   module: string
+  severity?: string
   createdAt: string
 }
 
@@ -241,6 +252,7 @@ function toDebtItem(mem: MindrMemory): DebtItem {
     file,
     line,
     module: tagValue(mem, 'module'),
+    severity: tagValue(mem, 'severity') || (typeof meta['severity'] === 'string' ? meta['severity'] : undefined),
     createdAt: mem.createdAt,
   }
 }
@@ -351,7 +363,10 @@ export class Mindr {
       results = results.filter((m) => new Date(m.createdAt) >= since)
     }
 
-    return results
+    return results.map((memory) => {
+      const qualityBreakdown = scoreMemoryQuality(memory)
+      return { ...memory, qualityScore: qualityBreakdown.total, qualityBreakdown }
+    })
   }
 
   /**
@@ -396,6 +411,13 @@ export class Mindr {
     if (opts.module) {
       mems = mems.filter((m) => m.tags.some((t) => t.key === 'module' && t.value === opts.module))
     }
+    if (opts.severity) {
+      mems = mems.filter((m) => m.tags.some((t) => t.key === 'severity' && t.value === opts.severity))
+    }
+    if (opts.minAge != null) {
+      const cutoff = Date.now() - opts.minAge * 86400000
+      mems = mems.filter((m) => new Date(m.createdAt).getTime() <= cutoff)
+    }
     if (opts.limit != null) {
       mems = mems.slice(0, opts.limit)
     }
@@ -436,6 +458,18 @@ export class Mindr {
    */
   async getSessionContext(opts: SessionContextOptions = {}): Promise<SessionContext> {
     return buildSessionContext(this.backend, opts)
+  }
+
+  async getContextHealth(sessionId: string): Promise<ContextHealthResult> {
+    return coreGetContextHealth(this.backend, sessionId)
+  }
+
+  async checkpointSession(sessionId: string): Promise<MindrMemory> {
+    return coreCheckpointSession(this.backend, sessionId)
+  }
+
+  async getStats(opts: { session?: string } = {}): Promise<MindrStats> {
+    return coreGetStats(this.backend, opts.session)
   }
 
   // -------------------------------------------------------------------------

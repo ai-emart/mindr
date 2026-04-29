@@ -10,11 +10,14 @@ import {
   debtTags,
   contextTags,
   conventionTags,
+  bugTags,
 } from '../schema.js'
 import type { MemoryBackend } from '../storage/backend.js'
 import { detect } from '../conventions/detector.js'
 import { updateForChangedFiles } from '../conventions/incremental.js'
 import type { ConventionProfile } from '../conventions/detector.js'
+import { detectDebtInUnifiedDiff } from '../debt/detector.js'
+import { functionFingerprints } from '../bugs/fingerprint.js'
 
 export interface CommitProcessingResult {
   memoriesCreated: number
@@ -22,6 +25,7 @@ export interface CommitProcessingResult {
   debtMemories: number
   contextMemories: number
   conventionMemories: number
+  bugPatternMemories: number
 }
 
 export type DecisionTrigger =
@@ -59,14 +63,7 @@ const DEPENDENCY_FILES = new Set([
   'build.gradle',
 ])
 
-const TODO_PATTERN = /\b(TODO|FIXME|HACK|XXX)\b/
-
-interface TodoFinding {
-  file: string
-  line: number
-  keyword: string
-  text: string
-}
+const BUG_FIX_MESSAGE = /\b(fix|bug|hotfix|patch)\b/i
 
 function isDependencyFileChange(files: CommitFileChange[]): boolean {
   return files.some((f) => DEPENDENCY_FILES.has(f.path.split('/').at(-1) ?? ''))
@@ -151,29 +148,23 @@ function getDecisionTriggers(
   return triggers
 }
 
-function extractTodos(diff: string): TodoFinding[] {
-  const findings: TodoFinding[] = []
-  let currentFile = ''
-  let currentLine = 0
+function languageForPath(path: string): string | null {
+  if (/\.(ts|tsx)$/.test(path)) return 'typescript'
+  if (/\.(js|jsx)$/.test(path)) return 'javascript'
+  if (/\.py$/.test(path)) return 'python'
+  return null
+}
 
-  for (const raw of diff.split('\n')) {
-    if (raw.startsWith('+++ b/')) {
-      currentFile = raw.slice(6)
-      currentLine = 0
-    } else if (raw.startsWith('@@ ')) {
-      const m = raw.match(/\+(\d+)/)
-      currentLine = m ? parseInt(m[1], 10) : 0
-    } else if (raw.startsWith('+') && !raw.startsWith('+++')) {
-      const text = raw.slice(1)
-      const m = TODO_PATTERN.exec(text)
-      if (m) {
-        findings.push({ file: currentFile, line: currentLine, keyword: m[1], text: text.trim() })
-      }
-      currentLine++
-    }
+function moduleForPath(path: string): string {
+  return path.includes('/') ? path.split('/')[0] ?? 'root' : 'root'
+}
+
+async function showFileAt(git: ReturnType<typeof simpleGit>, ref: string, path: string): Promise<string | null> {
+  try {
+    return await git.raw(['show', `${ref}:${path}`])
+  } catch {
+    return null
   }
-
-  return findings
 }
 
 export async function onCommit(
@@ -221,6 +212,7 @@ export async function onCommit(
     debtMemories: 0,
     contextMemories: 0,
     conventionMemories: 0,
+    bugPatternMemories: 0,
   }
 
   const primaryModule = diffStat.dirsTouched.find((d) => d !== '.') ?? 'root'
@@ -256,19 +248,83 @@ export async function onCommit(
     result.memoriesCreated++
   }
 
-  // TODO/FIXME/HACK/XXX in added lines
-  const todos = extractTodos(diff)
+  const debtFindings = detectDebtInUnifiedDiff(diff)
 
-  for (const todo of todos) {
-    const todoModule = todo.file.includes('/') ? todo.file.split('/')[0] : 'root'
+  for (const debt of debtFindings) {
+    const debtModule = moduleForPath(debt.file)
+    if (debt.removed) {
+      await backend.store({
+        content: `Resolved debt ${debt.id} at ${debt.file}:${debt.line}`,
+        role: 'system',
+        tags: [
+          { key: 'type', value: 'debt_resolved' },
+          { key: 'module', value: debtModule },
+          { key: 'original_debt', value: debt.id },
+          ...lineageTags,
+        ],
+        metadata: { sha, file: debt.file, line: debt.line, marker: debt.marker, resolutionCommit: sha },
+      })
+      result.debtMemories++
+      result.memoriesCreated++
+      continue
+    }
     await backend.store({
-      content: `${todo.keyword} at ${todo.file}:${todo.line} — ${todo.text}`,
+      content: `${debt.marker} at ${debt.file}:${debt.line} — ${debt.text}`,
       role: 'system',
-      tags: [...debtTags({ module: todoModule }), ...lineageTags],
-      metadata: { sha, file: todo.file, line: todo.line, keyword: todo.keyword },
+      tags: [...debtTags({ module: debtModule, severity: debt.severity, debtId: debt.id }), ...lineageTags],
+      metadata: {
+        id: debt.id,
+        sha,
+        author: commitInfo.author,
+        dateIntroduced: commitInfo.date,
+        file: debt.file,
+        line: debt.line,
+        keyword: debt.marker,
+        marker: debt.marker,
+        severity: debt.severity,
+      },
     })
     result.debtMemories++
     result.memoriesCreated++
+  }
+
+  if (BUG_FIX_MESSAGE.test(subject) && commitInfo.files.some((file) => file.status !== 'A' && file.deletions > 0)) {
+    for (const file of commitInfo.files) {
+      const language = languageForPath(file.path)
+      if (!language || file.status === 'A') continue
+      const before = await showFileAt(git, `${sha}^`, file.path)
+      const after = await showFileAt(git, sha, file.path)
+      if (!before || !after) continue
+      const beforeFingerprints = functionFingerprints(before, language)
+      const afterFingerprints = functionFingerprints(after, language)
+      const count = Math.max(beforeFingerprints.length, afterFingerprints.length)
+      for (let i = 0; i < count; i++) {
+        const pre = beforeFingerprints[i]
+        const post = afterFingerprints[i]
+        if (!pre || !post || pre.hash === post.hash) continue
+        const mod = moduleForPath(file.path)
+        await backend.store({
+          content: `Bug pattern fixed in ${file.path} by ${sha.slice(0, 8)}`,
+          role: 'system',
+          tags: [
+            ...bugTags({ module: mod, language, fingerprint: pre.hash, fixCommit: sha }),
+            ...lineageTags,
+          ],
+          metadata: {
+            sha,
+            file: file.path,
+            language,
+            module: mod,
+            preFingerprint: pre.hash,
+            postFingerprint: post.hash,
+            preShape: pre.shape,
+            postShape: post.shape,
+          },
+        })
+        result.bugPatternMemories++
+        result.memoriesCreated++
+      }
+    }
   }
 
   // Context memory — always emitted

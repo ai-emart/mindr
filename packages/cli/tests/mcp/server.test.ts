@@ -104,17 +104,24 @@ async function makeConnectedPair(backend: MemoryBackend) {
 // ---------------------------------------------------------------------------
 
 describe('MCP server — tool list', () => {
-  it('lists exactly 3 tools', async () => {
+  it('lists the expected tools', async () => {
     const { client } = await makeConnectedPair(new MockBackend(FIXTURE_MEMORIES))
     const { tools } = await client.listTools()
-    expect(tools).toHaveLength(3)
+    expect(tools).toHaveLength(6)
   })
 
   it('tool names are mindr:get_context, mindr:remember, mindr:query', async () => {
     const { client } = await makeConnectedPair(new MockBackend(FIXTURE_MEMORIES))
     const { tools } = await client.listTools()
     const names = tools.map((t) => t.name).sort()
-    expect(names).toEqual(['mindr:get_context', 'mindr:query', 'mindr:remember'])
+    expect(names).toEqual([
+      'mindr:check_for_bug_patterns',
+      'mindr:checkpoint',
+      'mindr:context_health',
+      'mindr:get_context',
+      'mindr:query',
+      'mindr:remember',
+    ])
   })
 
   it('each tool has a description and inputSchema', async () => {

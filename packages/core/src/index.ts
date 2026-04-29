@@ -12,6 +12,7 @@ export {
   bugTags,
   conventionTags,
   debtTags,
+  sessionCheckpointTags,
   noteTags,
   contextTags,
 } from './schema.js'
@@ -73,6 +74,15 @@ export {
 
 export type { SessionContextOptions, SessionContext, HotModule } from './context/builder.js'
 export { buildSessionContext } from './context/builder.js'
+export type { SessionActivity, ContextHealthResult, ContextHealthRecommendation } from './context/health.js'
+export { scoreContextHealth } from './context/health.js'
+export { getContextHealth, checkpointSession, healthFromActivity } from './context/checkpoint.js'
+export { fingerprint, structuralShape, functionFingerprints, type FunctionFingerprint } from './bugs/fingerprint.js'
+export { checkForBugPatterns, type BugPatternCheck, type BugPatternMatch } from './bugs/match.js'
+export { detectDebtInText, detectDebtInUnifiedDiff, inferDebtSeverity, type DebtMarker, type DebtSeverity } from './debt/detector.js'
+export { estimateTokens, estimateSavings, type TokenSavingsEstimate } from './metering/tokens.js'
+export { getStats, type MindrStats } from './metering/stats.js'
+export { scoreMemoryQuality, type QualityBreakdown, type QualityStats } from './quality/score.js'
 
 export type { ProjectMeta, StackItem, StackCategory, GenerateContext } from './generate/context.js'
 export { gatherContext, getProjectMeta, detectStack, queryConventions, queryDecisions, queryDebt } from './generate/context.js'

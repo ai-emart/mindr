@@ -13,6 +13,11 @@ import { addMigrateCommands } from './commands/migrate.js'
 import { addDecisionsCommands } from './commands/decisions.js'
 import { addReplayCommands } from './commands/replay.js'
 import { addBranchCommands } from './commands/branch.js'
+import { addBugsCommands } from './commands/bugs.js'
+import { addDebtCommands } from './commands/debt.js'
+import { addSessionCommands } from './commands/session.js'
+import { addStatsCommand } from './commands/stats.js'
+import { addUiCommand } from './commands/ui.js'
 
 const program = new Command()
 program.name('mindr').description('Memory-augmented dev tooling').version('0.0.1')
@@ -24,11 +29,16 @@ addMemoryCommands(program)
 addDecisionsCommands(program)
 addReplayCommands(program)
 addBranchCommands(program)
+addBugsCommands(program)
+addDebtCommands(program)
+addSessionCommands(program)
+addStatsCommand(program)
 addStatusCommand(program)
 addConfigCommands(program)
 addMigrateCommands(program)
 addGenerateCommands(program)
 addServeCommands(program)
+addUiCommand(program)
 addInternalCommands(program)
 
 program.parseAsync(process.argv)
