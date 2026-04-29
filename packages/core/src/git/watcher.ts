@@ -24,6 +24,21 @@ export interface CommitProcessingResult {
   conventionMemories: number
 }
 
+export type DecisionTrigger =
+  | 'keyword'
+  | 'large-cross-module-diff'
+  | 'new-top-level-dir'
+  | 'dependency-change'
+  | 'import-pattern-change'
+
+const TRIGGER_WEIGHTS: Record<DecisionTrigger, number> = {
+  keyword: 0.4,
+  'large-cross-module-diff': 0.25,
+  'new-top-level-dir': 0.3,
+  'dependency-change': 0.15,
+  'import-pattern-change': 0.25,
+}
+
 const DECISION_KEYWORDS = /\b(refactor|switch|migrate|replace|chose|decided|architecture)\b/i
 
 const DEPENDENCY_FILES = new Set([
@@ -57,18 +72,83 @@ function isDependencyFileChange(files: CommitFileChange[]): boolean {
   return files.some((f) => DEPENDENCY_FILES.has(f.path.split('/').at(-1) ?? ''))
 }
 
-function getDecisionTrigger(
+/** Detect whether 5+ distinct files have added or changed import/require lines. */
+function detectImportPatternChange(diff: string): boolean {
+  const filesWithImportChanges = new Set<string>()
+  let currentFile = ''
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+++ b/')) {
+      currentFile = line.slice(6)
+    } else if (line.startsWith('+') && !line.startsWith('+++') && currentFile) {
+      const text = line.slice(1)
+      if (/^\s*(import\s|from\s+['"]|require\()/.test(text)) {
+        filesWithImportChanges.add(currentFile)
+      }
+    }
+  }
+  return filesWithImportChanges.size >= 5
+}
+
+/**
+ * Extract package version changes from a dep-file diff.
+ * Returns only pairs where both from and to versions are present and differ.
+ */
+function extractVersionDiffs(diff: string): Record<string, { from: string; to: string }> {
+  const changes: Record<string, { from: string; to: string }> = {}
+  let inDepFile = false
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+++ b/')) {
+      const fname = line.slice(6).split('/').at(-1) ?? ''
+      inDepFile = DEPENDENCY_FILES.has(fname)
+    }
+    if (!inDepFile) continue
+    const rm = line.match(/^-\s*"([^"]+)":\s*"([^"]+)"/)
+    const add = line.match(/^\+\s*"([^"]+)":\s*"([^"]+)"/)
+    if (rm?.[1] && rm[2] && /^[\^~]?\d/.test(rm[2])) {
+      if (!changes[rm[1]]) changes[rm[1]] = { from: '', to: '' }
+      changes[rm[1]]!.from = rm[2]
+    }
+    if (add?.[1] && add[2] && /^[\^~]?\d/.test(add[2])) {
+      if (!changes[add[1]]) changes[add[1]] = { from: '', to: '' }
+      changes[add[1]]!.to = add[2]
+    }
+  }
+  return Object.fromEntries(
+    Object.entries(changes).filter(([, v]) => v.from && v.to && v.from !== v.to),
+  )
+}
+
+/** Compute a 0–1 confidence score by summing per-trigger weights. */
+export function computeConfidence(triggers: DecisionTrigger[]): number {
+  const raw = triggers.reduce((sum, t) => sum + TRIGGER_WEIGHTS[t], 0)
+  return Math.min(1, Math.round(raw * 100) / 100)
+}
+
+/** Pull the commit body (everything after the first line) into a rationale string. */
+export function extractRationale(message: string): string | null {
+  const lines = message.split('\n')
+  let i = 1
+  while (i < lines.length && (lines[i]?.trim() ?? '') === '') i++
+  if (i >= lines.length) return null
+  const body = lines.slice(i).join('\n').trim()
+  return body.length > 0 ? body : null
+}
+
+function getDecisionTriggers(
   message: string,
   totalChanges: number,
   uniqueDirs: number,
   newDirs: string[],
   depChange: boolean,
-): string {
-  if (DECISION_KEYWORDS.test(message)) return 'keyword'
-  if (totalChanges > 100 && uniqueDirs >= 2) return 'large-cross-module-diff'
-  if (newDirs.length > 0) return 'new-top-level-dir'
-  if (depChange) return 'dependency-change'
-  return 'unknown'
+  importPatternChange: boolean,
+): DecisionTrigger[] {
+  const triggers: DecisionTrigger[] = []
+  if (DECISION_KEYWORDS.test(message)) triggers.push('keyword')
+  if (totalChanges > 100 && uniqueDirs >= 2) triggers.push('large-cross-module-diff')
+  if (newDirs.length > 0) triggers.push('new-top-level-dir')
+  if (depChange) triggers.push('dependency-change')
+  if (importPatternChange) triggers.push('import-pattern-change')
+  return triggers
 }
 
 function extractTodos(diff: string): TodoFinding[] {
@@ -107,15 +187,25 @@ export async function onCommit(
     getDiffStat(git, sha),
   ])
 
+  // Fetch unified diff once — used for TODO extraction, import detection, version diffs.
+  const diff = await git.raw(['show', '-U0', '--pretty=format:', sha])
+
   const newDirs = await getNewTopLevelDirs(git, sha, commitInfo.files)
   const totalChanges = diffStat.totalAdditions + diffStat.totalDeletions
   const depChange = isDependencyFileChange(commitInfo.files)
+  const importPatternChange = detectImportPatternChange(diff)
 
-  const isDecision =
-    DECISION_KEYWORDS.test(commitInfo.message) ||
-    (totalChanges > 100 && diffStat.dirsTouched.length >= 2) ||
-    newDirs.length > 0 ||
-    depChange
+  // Subject line only — body goes to rationale.
+  const subject = commitInfo.message.split('\n')[0] ?? commitInfo.message
+
+  const triggers = getDecisionTriggers(
+    subject,
+    totalChanges,
+    diffStat.dirsTouched.length,
+    newDirs,
+    depChange,
+    importPatternChange,
+  )
 
   const result: CommitProcessingResult = {
     memoriesCreated: 0,
@@ -127,27 +217,31 @@ export async function onCommit(
 
   const primaryModule = diffStat.dirsTouched.find((d) => d !== '.') ?? 'root'
 
-  if (isDecision) {
-    const trigger = getDecisionTrigger(
-      commitInfo.message,
-      totalChanges,
-      diffStat.dirsTouched.length,
-      newDirs,
-      depChange,
-    )
+  if (triggers.length > 0) {
+    const confidence = computeConfidence(triggers)
+    const rationale = extractRationale(commitInfo.message)
+    const filesAffected = commitInfo.files.map((f) => f.path)
+    const versionDiffs = depChange ? extractVersionDiffs(diff) : undefined
+
     await backend.store({
-      content: `Decision: ${commitInfo.message}`,
+      content: `Decision: ${subject}`,
       role: 'system',
-      tags: decisionTags({ module: primaryModule, commit: sha }),
+      tags: decisionTags({ module: primaryModule, commit: sha, confidence: String(confidence) }),
       metadata: {
         sha,
         author: commitInfo.author,
         date: commitInfo.date,
-        trigger,
+        // Primary trigger kept for backward compatibility; triggers array is the full set.
+        trigger: triggers[0],
+        triggers,
+        confidence,
+        rationale,
+        filesAffected,
         additions: diffStat.totalAdditions,
         deletions: diffStat.totalDeletions,
         filesChanged: diffStat.filesTouched,
         newDirs,
+        ...(versionDiffs && Object.keys(versionDiffs).length > 0 ? { versionDiffs } : {}),
       },
     })
     result.decisionMemories++
@@ -155,7 +249,6 @@ export async function onCommit(
   }
 
   // TODO/FIXME/HACK/XXX in added lines
-  const diff = await git.raw(['show', '-U0', '--pretty=format:', sha])
   const todos = extractTodos(diff)
 
   for (const todo of todos) {
@@ -173,7 +266,7 @@ export async function onCommit(
   // Context memory — always emitted
   const dirSummary = diffStat.dirsTouched.join(', ') || 'root'
   await backend.store({
-    content: `Commit ${sha.slice(0, 8)}: ${commitInfo.message}. Changed ${diffStat.filesTouched} file(s) (+${diffStat.totalAdditions}/-${diffStat.totalDeletions}) in: ${dirSummary}`,
+    content: `Commit ${sha.slice(0, 8)}: ${subject}. Changed ${diffStat.filesTouched} file(s) (+${diffStat.totalAdditions}/-${diffStat.totalDeletions}) in: ${dirSummary}`,
     role: 'system',
     tags: [
       ...contextTags({ module: primaryModule }),
@@ -214,7 +307,6 @@ export async function onCommit(
     for (const profile of profiles) {
       if (profile.conventions.length === 0) continue
 
-      // Check if scores changed >5% vs stored profile for this language
       const stored = existing.find(
         (m) => m.tags.some((t) => t.key === 'language' && t.value === profile.language),
       )

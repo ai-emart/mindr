@@ -226,6 +226,58 @@ describe('Mindr', () => {
     expect(results[0]!.module).toBe('auth')
   })
 
+  it('getDecisions() filters by from date (future cutoff returns nothing)', async () => {
+    await mindr.remember('Decision: early', { type: 'decision', metadata: { date: '2023-01-01' } })
+    await mindr.remember('Decision: recent', { type: 'decision', metadata: { date: '2024-06-01' } })
+    // All memories are created now, so a far-future cutoff returns nothing
+    const results = await mindr.getDecisions({ from: new Date('2099-01-01') })
+    expect(results).toHaveLength(0)
+    // A past cutoff returns all
+    const allResults = await mindr.getDecisions({ from: new Date('2020-01-01') })
+    expect(allResults.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('getDecisions() filters by to date (past cutoff returns nothing)', async () => {
+    await mindr.remember('Decision: past', { type: 'decision', metadata: { date: '2023-01-01' } })
+    // All memories were created now, so a 2020 to-cutoff returns nothing
+    const results = await mindr.getDecisions({ to: new Date('2020-01-01') })
+    expect(results).toHaveLength(0)
+  })
+
+  it('getDecisions() exposes confidence, triggers, rationale, filesAffected', async () => {
+    await mindr.remember('Decision: use ESM', {
+      type: 'decision',
+      metadata: {
+        date: '2024-01-01',
+        trigger: 'keyword',
+        triggers: ['keyword', 'import-pattern-change'],
+        confidence: 0.65,
+        rationale: 'Better tree-shaking.',
+        filesAffected: ['tsconfig.json', 'package.json'],
+      },
+    })
+    const [d] = await mindr.getDecisions()
+    expect(d!.trigger).toBe('keyword')
+    expect(d!.triggers).toEqual(['keyword', 'import-pattern-change'])
+    expect(d!.confidence).toBe(0.65)
+    expect(d!.rationale).toBe('Better tree-shaking.')
+    expect(d!.filesAffected).toEqual(['tsconfig.json', 'package.json'])
+  })
+
+  it('getDecisions() marks reversed decisions with reversed:true', async () => {
+    const mem = await mindr.remember('Decision: old approach', { type: 'decision' })
+    await mindr.remember(`Reversed decision ${mem.id}`, {
+      tags: [
+        { key: 'type', value: 'note' },
+        { key: 'reversed_decision', value: 'true' },
+        { key: 'original_decision', value: mem.id },
+      ],
+    })
+    const results = await mindr.getDecisions()
+    const d = results.find((x) => x.id === mem.id)
+    expect(d?.reversed).toBe(true)
+  })
+
   // -------------------------------------------------------------------------
   // getDebt
   // -------------------------------------------------------------------------

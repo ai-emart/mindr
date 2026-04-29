@@ -92,6 +92,18 @@ export interface QueryOptions {
   limit?: number
 }
 
+/** Options for {@link Mindr#getDecisions}. */
+export interface DecisionsOptions {
+  /** Filter to a specific module. */
+  module?: string
+  /** Only return decisions on or after this date. */
+  from?: Date
+  /** Only return decisions on or before this date. */
+  to?: Date
+  /** Maximum results (default 50). */
+  limit?: number
+}
+
 /** Options for {@link Mindr#getDebt}. */
 export interface DebtOptions {
   /** Filter to a specific module. */
@@ -134,8 +146,18 @@ export interface Decision {
   date: string
   /** Module this decision belongs to. */
   module: string
-  /** What triggered the decision — `'keyword'`, `'manual'`, etc. */
+  /** Primary trigger that classified this commit as a decision (backward-compat). */
   trigger?: string
+  /** All triggers that contributed to classifying this commit as a decision. */
+  triggers?: string[]
+  /** Confidence score in [0, 1] combining signal strength. */
+  confidence?: number
+  /** Commit body text (everything after the subject line), or null if absent. */
+  rationale?: string
+  /** Files touched in the commit that produced this decision. */
+  filesAffected?: string[]
+  /** True when this decision has been marked reversed via `mindr decisions reverse`. */
+  reversed?: boolean
   /** Full ISO 8601 timestamp the memory was created. */
   createdAt: string
 }
@@ -184,7 +206,7 @@ function tagValue(mem: MindrMemory, key: string): string {
   return mem.tags.find((t) => t.key === key)?.value ?? ''
 }
 
-function toDecision(mem: MindrMemory): Decision {
+function toDecision(mem: MindrMemory, reversedIds?: Set<string>): Decision {
   const meta = (mem.metadata ?? {}) as Record<string, unknown>
   const raw = mem.content
   const summary = raw.startsWith('Decision: ') ? raw.slice('Decision: '.length) : raw
@@ -194,6 +216,13 @@ function toDecision(mem: MindrMemory): Decision {
     date: typeof meta['date'] === 'string' ? meta['date'] : mem.createdAt.slice(0, 10),
     module: tagValue(mem, 'module'),
     trigger: typeof meta['trigger'] === 'string' ? meta['trigger'] : undefined,
+    triggers: Array.isArray(meta['triggers']) ? (meta['triggers'] as string[]) : undefined,
+    confidence: typeof meta['confidence'] === 'number' ? (meta['confidence'] as number) : undefined,
+    rationale: typeof meta['rationale'] === 'string' ? meta['rationale'] : undefined,
+    filesAffected: Array.isArray(meta['filesAffected'])
+      ? (meta['filesAffected'] as string[])
+      : undefined,
+    reversed: reversedIds != null ? reversedIds.has(mem.id) : undefined,
     createdAt: mem.createdAt,
   }
 }
@@ -329,20 +358,32 @@ export class Mindr {
    * Return all decision memories as structured {@link Decision} objects,
    * newest-first.
    */
-  async getDecisions(opts: QueryOptions = {}): Promise<Decision[]> {
-    // queryDecisions already sorts newest-first and uses a single type tag
+  async getDecisions(opts: DecisionsOptions = {}): Promise<Decision[]> {
     const limit = opts.limit ?? 50
     let mems = await queryDecisions(this.backend, limit)
 
     if (opts.module) {
       mems = mems.filter((m) => m.tags.some((t) => t.key === 'module' && t.value === opts.module))
     }
-    if (opts.since) {
-      const since = opts.since
-      mems = mems.filter((m) => new Date(m.createdAt) >= since)
+    if (opts.from) {
+      const from = opts.from
+      mems = mems.filter((m) => new Date(m.createdAt) >= from)
+    }
+    if (opts.to) {
+      const to = opts.to
+      mems = mems.filter((m) => new Date(m.createdAt) <= to)
     }
 
-    return mems.map(toDecision)
+    const reversedMarkers = await this.backend.listByTags([
+      { key: 'reversed_decision', value: 'true' },
+    ])
+    const reversedIds = new Set(
+      reversedMarkers
+        .map((m) => m.tags.find((t) => t.key === 'original_decision')?.value)
+        .filter((v): v is string => v != null),
+    )
+
+    return mems.map((m) => toDecision(m, reversedIds))
   }
 
   /**
