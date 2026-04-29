@@ -1,0 +1,25 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`SDK public surface > Mindr class exposes expected instance methods 1`] = `
+[
+  "close",
+  "forget",
+  "getConventions",
+  "getDebt",
+  "getDecisions",
+  "getSessionContext",
+  "getStatus",
+  "migrateSqliteToRemembr",
+  "query",
+  "regenerateAgentsMd",
+  "remember",
+]
+`;
+
+exports[`SDK public surface > exports the expected named identifiers 1`] = `
+[
+  "MEMORY_TYPES",
+  "Mindr",
+  "VERSION",
+]
+`;

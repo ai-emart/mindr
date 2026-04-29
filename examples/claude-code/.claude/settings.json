@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mindr": {
+      "command": "mindr",
+      "args": ["serve"]
+    }
+  }
+}

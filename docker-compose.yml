@@ -1,0 +1,82 @@
+# Mindr — one-command local setup
+#
+# Starts Ollama for local embeddings.
+# Mindr itself runs on your host machine (npm install -g mindr).
+# SQLite backend used by default — zero API keys, fully offline.
+#
+# Usage:
+#   docker compose up -d
+#   mindr init     # in your project (uses local SQLite + Ollama)
+
+name: mindr
+
+services:
+  # ---------------------------------------------------------------------------
+  # Ollama — local embedding model (nomic-embed-text, ~270 MB)
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mindr-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # One-shot: pull the embedding model on first start
+  # ---------------------------------------------------------------------------
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: mindr-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: ["ollama", "pull", "nomic-embed-text"]
+    restart: on-failure
+
+  # ---------------------------------------------------------------------------
+  # Optional: self-hosted Remembr backend
+  # Uncomment if you are running your own Remembr instance.
+  # See https://github.com/remembr-dev/remembr for setup instructions.
+  # ---------------------------------------------------------------------------
+  # remembr:
+  #   image: ghcr.io/remembr-dev/remembr:latest
+  #   container_name: mindr-remembr
+  #   ports:
+  #     - "3001:3001"
+  #   environment:
+  #     DATABASE_URL: postgresql://mindr:mindr@postgres:5432/remembr
+  #     SECRET_KEY: change-me-in-production
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+  #
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: mindr-postgres
+  #   environment:
+  #     POSTGRES_DB: remembr
+  #     POSTGRES_USER: mindr
+  #     POSTGRES_PASSWORD: mindr
+  #   volumes:
+  #     - pg_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U mindr"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 10
+  #   restart: unless-stopped
+
+volumes:
+  ollama_data:
+  # pg_data:

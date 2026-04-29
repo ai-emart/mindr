@@ -1,0 +1,103 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`generateAgentsMd — snapshot > renders AGENTS.md deterministically from fixed context 1`] = `
+"<!-- mindr-generated -->
+
+# demo-app
+
+A demonstration application
+
+**Repository:** https://github.com/example/demo-app  
+**Version:** 1.2.0  
+**Language:** typescript
+
+## Stack & Architecture
+
+**Language**
+- TypeScript — language
+
+**Framework**
+- React — UI library
+
+**Testing**
+- Vitest — test runner
+
+## Conventions
+
+### Typescript
+
+| Category | Style | Confidence | Samples |
+|----------|-------|-----------|---------|
+| Class / type names | \`PascalCase\` | 100% | 8 |
+| Function names | \`camelCase\` | 97% | 45 |
+| Variable names | \`camelCase\` | 82% | 30 |
+
+## Recent Decisions
+
+- **2024-01-10** — switch to Vitest for faster test runs *(keyword)*
+- **2024-01-08** — migrate from CRA to Vite *(keyword)*
+
+## Active Warnings
+
+### Technical Debt
+
+- \`src/auth.ts:22\` — **TODO**: validate token expiry
+- \`src/db.ts:45\` — **FIXME**: handle connection pool exhaustion
+"
+`;
+
+exports[`generateClaudeMd — snapshot > renders CLAUDE.md deterministically from fixed context 1`] = `
+"<!-- mindr-generated -->
+
+# demo-app
+
+A demonstration application
+
+> Repository: https://github.com/example/demo-app
+
+## Project Overview
+
+This is a **typescript project** using TypeScript, React, Vitest.
+Version: 1.2.0
+
+## Stack & Architecture
+
+- **TypeScript** — language
+- **React** — UI library
+- **Vitest** — test runner
+
+## Conventions
+
+### Typescript
+
+- Use PascalCase for **Class / type names** (100% consistency, 8 samples)
+- Use camelCase for **Function / method names** (97% consistency, 45 samples)
+- Use camelCase for **Variable names** (82% consistency, 30 samples)
+
+## Recent Decisions
+
+Context for understanding recent architectural choices:
+
+- **2024-01-10** — switch to Vitest for faster test runs *(keyword)*
+- **2024-01-08** — migrate from CRA to Vite *(keyword)*
+
+## Active Warnings
+
+Known issues to be aware of while working on this codebase:
+
+- \`src/auth.ts:22\` — **TODO** — validate token expiry
+- \`src/db.ts:45\` — **FIXME** — handle connection pool exhaustion
+
+## Memory
+
+This file is maintained by **[Mindr](https://github.com/ai-emart/mindr)**, which observes your commits and learns your codebase conventions automatically.
+
+\`\`\`
+# Search Mindr memory
+mindr search "<query>"
+
+# Refresh this file
+mindr generate claude-md
+\`\`\`
+"
+`;

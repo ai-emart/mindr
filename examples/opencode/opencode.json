@@ -1,0 +1,10 @@
+{
+  "mcp": {
+    "servers": {
+      "mindr": {
+        "command": "mindr",
+        "args": ["serve"]
+      }
+    }
+  }
+}

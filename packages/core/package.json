@@ -1,0 +1,39 @@
+{
+  "name": "@ai-emart/mindr-core",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "@remembr/sdk": "^0.2.0",
+    "better-sqlite3": "^12.9.0",
+    "simple-git": "^3.36.0",
+    "tree-sitter": "0.21.1",
+    "tree-sitter-go": "0.23.4",
+    "tree-sitter-javascript": "0.23.1",
+    "tree-sitter-python": "0.23.3",
+    "tree-sitter-rust": "^0.24.0",
+    "tree-sitter-typescript": "^0.23.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13"
+  }
+}

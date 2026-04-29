@@ -1,0 +1,6 @@
+# Mindr MCP server — add to your project's codex.toml
+# or ~/.codex/config.toml for a global installation
+
+[[mcp_servers]]
+name    = "mindr"
+command = "mindr serve"
