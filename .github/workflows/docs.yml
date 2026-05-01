@@ -23,7 +23,7 @@ jobs:
       # docs/ is not a pnpm workspace package, so use npm directly
       - name: Install docs dependencies
         working-directory: docs
-        run: npm install
+        run: npm ci
       - name: Build docs
         working-directory: docs
         run: npm run build
