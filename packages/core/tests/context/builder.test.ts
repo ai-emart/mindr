@@ -123,6 +123,7 @@ describe('buildSessionContext — shape', () => {
     expect(ctx).toHaveProperty('stack')
     expect(ctx).toHaveProperty('conventions')
     expect(ctx).toHaveProperty('decisions')
+    expect(ctx).toHaveProperty('recentTask')
     expect(ctx).toHaveProperty('hotModules')
     expect(ctx).toHaveProperty('warnings')
     expect(ctx).toHaveProperty('summary')
@@ -163,6 +164,21 @@ describe('buildSessionContext — shape', () => {
     const coreModule = ctx.hotModules.find((m) => m.module === 'core')
     expect(coreModule).toBeDefined()
     expect(coreModule!.touches).toBe(2)
+  })
+
+  it('recentTask is derived from a recent context memory', async () => {
+    const ctx = await buildSessionContext(new MockBackend(FIXTURES))
+    expect(ctx.recentTask).toBeTruthy()
+    expect(['add feature', 'fix bug', 'docs update']).toContain(ctx.recentTask!.summary)
+    expect(ctx.summary).toContain('[RECENT TASK]')
+  })
+
+  it('renders sections in required priority order', async () => {
+    const ctx = await buildSessionContext(new MockBackend(FIXTURES))
+    expect(ctx.summary.indexOf('[WARNINGS]')).toBeLessThan(ctx.summary.indexOf('[RECENT TASK]'))
+    expect(ctx.summary.indexOf('[RECENT TASK]')).toBeLessThan(ctx.summary.indexOf('[RECENT DECISIONS]'))
+    expect(ctx.summary.indexOf('[RECENT DECISIONS]')).toBeLessThan(ctx.summary.indexOf('[CONVENTIONS]'))
+    expect(ctx.summary.indexOf('[CONVENTIONS]')).toBeLessThan(ctx.summary.indexOf('[STACK OVERVIEW]'))
   })
 
   it('summary starts with === MINDR CONTEXT ===', async () => {
@@ -214,7 +230,7 @@ describe('buildSessionContext — token budget', () => {
   it('drops stack first when budget is tight', async () => {
     // Use a very small budget that forces dropping
     const ctx = await buildSessionContext(new MockBackend(FIXTURES), { max_tokens: 10 })
-    expect(ctx.droppedSections).toContain('stack')
+    expect(ctx.droppedSections).toContain('stackOverview')
   })
 
   it('always retains warnings (highest priority) under any budget', async () => {
@@ -227,27 +243,27 @@ describe('buildSessionContext — token budget', () => {
 
     // With extreme budget, stack is dropped before warnings
     if (ctxTight.droppedSections.includes('warnings')) {
-      expect(ctxTight.droppedSections.indexOf('stack')).toBeLessThan(
+      expect(ctxTight.droppedSections.indexOf('stackOverview')).toBeLessThan(
         ctxTight.droppedSections.indexOf('warnings'),
       )
     }
   })
 
-  it('drops sections in priority order: stack before conventions before hotModules', async () => {
+  it('drops sections in priority order: stack overview before conventions before decisions', async () => {
     const ctx = await buildSessionContext(new MockBackend(FIXTURES), { max_tokens: 50 })
     const dropped = ctx.droppedSections
 
-    const stackIdx   = dropped.indexOf('stack')
+    const stackIdx   = dropped.indexOf('stackOverview')
     const convsIdx   = dropped.indexOf('conventions')
-    const hotIdx     = dropped.indexOf('hotModules')
+    const decisionsIdx = dropped.indexOf('decisions')
 
     // If both stack and conventions are dropped, stack came first
     if (stackIdx !== -1 && convsIdx !== -1) {
       expect(stackIdx).toBeLessThan(convsIdx)
     }
-    // If both conventions and hotModules are dropped, conventions came first
-    if (convsIdx !== -1 && hotIdx !== -1) {
-      expect(convsIdx).toBeLessThan(hotIdx)
+    // If both conventions and decisions are dropped, conventions came first
+    if (convsIdx !== -1 && decisionsIdx !== -1) {
+      expect(convsIdx).toBeLessThan(decisionsIdx)
     }
   })
 
@@ -270,6 +286,7 @@ describe('buildSessionContext — empty backend', () => {
     expect(ctx.stack).toEqual([])
     expect(ctx.conventions).toEqual([])
     expect(ctx.decisions).toEqual([])
+    expect(ctx.recentTask).toBeNull()
     expect(ctx.hotModules).toEqual([])
     expect(ctx.warnings).toEqual([])
     expect(ctx.droppedSections).toEqual([])

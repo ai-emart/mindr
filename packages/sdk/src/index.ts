@@ -16,7 +16,7 @@ import {
   queryDebt,
   getContextHealth as coreGetContextHealth,
   checkpointSession as coreCheckpointSession,
-  getStats as coreGetStats,
+  debtTags,
   scoreMemoryQuality,
   generateAgentsMd as coreGenerateAgentsMd,
   generateClaudeMd as coreGenerateClaudeMd,
@@ -35,6 +35,7 @@ import type {
   HotModule,
   MindrStats,
   ContextHealthResult,
+  QualityBreakdown,
 } from '@ai-emart/mindr-core'
 
 // ---------------------------------------------------------------------------
@@ -53,6 +54,13 @@ export type {
   HotModule,
   MindrStats,
   ContextHealthResult,
+  QualityBreakdown,
+}
+
+/** A {@link MindrMemory} enriched with quality scoring from {@link Mindr.query}. */
+export interface ScoredMemory extends MindrMemory {
+  qualityScore: number
+  qualityBreakdown: QualityBreakdown
 }
 export { MEMORY_TYPES }
 
@@ -120,6 +128,15 @@ export interface DebtOptions {
   minAge?: number
   /** Maximum results. */
   limit?: number
+}
+
+/** Options for {@link Mindr#addDebt}. */
+export interface AddDebtOptions {
+  file: string
+  severity?: 'high' | 'medium' | 'low'
+  module?: string
+  tags?: MindrTag[]
+  metadata?: Record<string, unknown>
 }
 
 /** Options for {@link Mindr#getConventions}. */
@@ -347,7 +364,7 @@ export class Mindr {
    * `module` and `since` filters in JavaScript (avoids backend OR semantics
    * for multi-tag queries).
    */
-  async query(opts: QueryOptions = {}): Promise<MindrMemory[]> {
+  async query(opts: QueryOptions = {}): Promise<ScoredMemory[]> {
     // Single-tag SQL fetch — safe for both SqliteBackend and RemembrBackend
     const primaryTags: MindrTag[] = opts.type ? [{ key: 'type', value: opts.type }] : []
     let results = await this.backend.listByTags(primaryTags, opts.limit ?? 50)
@@ -363,7 +380,7 @@ export class Mindr {
       results = results.filter((m) => new Date(m.createdAt) >= since)
     }
 
-    return results.map((memory) => {
+    return results.map((memory): ScoredMemory => {
       const qualityBreakdown = scoreMemoryQuality(memory)
       return { ...memory, qualityScore: qualityBreakdown.total, qualityBreakdown }
     })
@@ -425,6 +442,40 @@ export class Mindr {
     return mems.map(toDebtItem)
   }
 
+  async addDebt(content: string, opts: AddDebtOptions): Promise<DebtItem> {
+    const module = opts.module ?? (opts.file.includes('/') ? opts.file.split('/')[0] ?? 'root' : 'root')
+    const severity = opts.severity ?? 'medium'
+    const memory = await this.backend.store({
+      content,
+      role: 'user',
+      tags: [
+        ...debtTags({ module, severity }),
+        { key: 'source', value: 'manual' },
+        ...(opts.tags ?? []),
+      ],
+      metadata: {
+        file: opts.file,
+        severity,
+        manual: true,
+        ...(opts.metadata ?? {}),
+      },
+    })
+    return toDebtItem(memory)
+  }
+
+  async resolveDebt(id: string): Promise<MindrMemory> {
+    return this.backend.store({
+      content: `Manually resolved debt ${id}`,
+      role: 'user',
+      tags: [
+        { key: 'type', value: 'debt_resolved' },
+        { key: 'original_debt', value: id },
+        { key: 'source', value: 'manual' },
+      ],
+      metadata: { originalId: id, resolvedAt: new Date().toISOString() },
+    })
+  }
+
   /**
    * Return the stored {@link ConventionProfile} for each detected language.
    *
@@ -468,8 +519,46 @@ export class Mindr {
     return coreCheckpointSession(this.backend, sessionId)
   }
 
-  async getStats(opts: { session?: string } = {}): Promise<MindrStats> {
-    return coreGetStats(this.backend, opts.session)
+  async getStats(opts: { session?: string; last?: string } = {}): Promise<MindrStats> {
+    const cutoff = (() => {
+      if (!opts.last) return null
+      const match = /^(\d+)(m|h|d|w)$/i.exec(opts.last)
+      if (!match) return null
+      const amount = Number.parseInt(match[1]!, 10)
+      const unit = match[2]!.toLowerCase()
+      const millis =
+        unit === 'm' ? amount * 60_000 :
+        unit === 'h' ? amount * 3_600_000 :
+        unit === 'd' ? amount * 86_400_000 :
+        amount * 7 * 86_400_000
+      return new Date(Date.now() - millis)
+    })()
+    const mems = await this.backend.listByTags([{ key: 'type', value: 'metering' }], 1000)
+    const filtered = mems.filter((m) => {
+      const matchesSession = opts.session
+        ? m.sessionId === opts.session || m.tags.some((t) => t.key === 'session' && t.value === opts.session)
+        : true
+      const matchesWindow = cutoff ? new Date(m.createdAt) >= cutoff : true
+      return matchesSession && matchesWindow
+    })
+    const sessions = new Set<string>()
+    let tokensInjected = 0
+    let tokensSelfReported = 0
+    let estimatedSaved = 0
+    for (const mem of filtered) {
+      if (mem.sessionId) sessions.add(mem.sessionId)
+      const meta = mem.metadata ?? {}
+      tokensInjected += typeof meta['tokensInjected'] === 'number' ? meta['tokensInjected'] : 0
+      tokensSelfReported += typeof meta['tokensSelfReported'] === 'number' ? meta['tokensSelfReported'] : 0
+      estimatedSaved += typeof meta['estimatedSaved'] === 'number' ? meta['estimatedSaved'] : 0
+    }
+    return {
+      sessions: opts.session ? 1 : sessions.size,
+      tokensInjected,
+      tokensSelfReported,
+      estimatedSaved,
+      range: { low: Math.round(estimatedSaved * 0.5), high: estimatedSaved },
+    }
   }
 
   // -------------------------------------------------------------------------

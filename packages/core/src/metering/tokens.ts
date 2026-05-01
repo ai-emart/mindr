@@ -20,11 +20,13 @@ export function estimateTokens(text: string): number {
 export function estimateSavings(tokensInjected: number, sourceTexts: string[]): TokenSavingsEstimate {
   const baseline = sourceTexts.reduce((sum, text) => sum + estimateTokens(text), 0)
   const saved = Math.max(0, baseline - tokensInjected)
+  // Be deliberately conservative: the top of the range never exceeds the
+  // direct baseline-minus-injected estimate, so reported savings are not inflated.
   return {
     injected: tokensInjected,
     baseline,
     saved,
-    low: Math.max(0, Math.round(saved * 0.7)),
-    high: Math.round(saved * 1.3),
+    low: Math.max(0, Math.round(saved * 0.5)),
+    high: saved,
   }
 }

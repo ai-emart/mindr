@@ -9,10 +9,14 @@ async function backendFromDeps(deps: BugsDeps): Promise<MemoryBackend> {
   return deps.backend ?? getBackend(loadConfig(await getRepoRoot(process.cwd())))
 }
 
-export async function runBugsList(opts: { module?: string }, deps: BugsDeps): Promise<void> {
+export async function runBugsList(opts: { module?: string; json?: boolean }, deps: BugsDeps): Promise<void> {
   const backend = await backendFromDeps(deps)
   let memories = await backend.listByTags([{ key: 'type', value: 'bug_pattern' }], 100)
   if (opts.module) memories = memories.filter((m) => m.tags.some((t) => t.key === 'module' && t.value === opts.module))
+  if (opts.json) {
+    process.stdout.write(`${JSON.stringify(memories, null, 2)}\n`)
+    return
+  }
   const table = new Table({ head: ['ID', 'Module', 'Language', 'Fingerprint', 'Fix'] })
   for (const mem of memories) {
     table.push([
@@ -28,5 +32,5 @@ export async function runBugsList(opts: { module?: string }, deps: BugsDeps): Pr
 
 export function addBugsCommands(program: Command, deps: BugsDeps = {}): void {
   const bugs = program.command('bugs').description('Manage bug pattern memories')
-  bugs.command('list').option('--module <name>', 'Filter by module').action((opts: { module?: string }) => runBugsList(opts, deps))
+  bugs.command('list').option('--module <name>', 'Filter by module').option('--json').action((opts: { module?: string; json?: boolean }) => runBugsList(opts, deps))
 }

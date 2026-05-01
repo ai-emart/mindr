@@ -36,6 +36,7 @@ export interface SessionContext {
   stack: string[]                                              // language names from convention profiles
   conventions: Array<{ language: string; rules: string[] }>  // top rules per language
   decisions: Array<{ date: string; summary: string; trigger?: string }>
+  recentTask: { date: string; summary: string; module: string } | null
   hotModules: HotModule[]
   warnings: Array<{ keyword: string; location: string; text: string }>
   summary: string       // full rendered text, possibly token-trimmed
@@ -46,11 +47,11 @@ export interface SessionContext {
 // Section priority: higher = kept longer when trimming.
 // Drop order when over budget: stack (0) → conventions (1) → hotModules (2) → decisions (3) → warnings (4)
 const SECTION_PRIORITY = {
-  stack:       0,
-  conventions: 1,
-  hotModules:  2,
-  decisions:   3,
-  warnings:    4,
+  stackOverview: 0,
+  conventions:   1,
+  decisions:     2,
+  recentTask:    3,
+  warnings:      4,
 } as const
 
 type SectionName = keyof typeof SECTION_PRIORITY
@@ -63,9 +64,14 @@ type SectionName = keyof typeof SECTION_PRIORITY
 // Section renderers
 // ---------------------------------------------------------------------------
 
-function renderStack(stack: string[]): string {
-  if (stack.length === 0) return ''
-  return `[STACK]\n${stack.join(' | ')}\n`
+function renderStackOverview(stack: string[], mods: HotModule[]): string {
+  const lines: string[] = []
+  if (stack.length > 0) lines.push(`  Stack: ${stack.join(' | ')}`)
+  if (mods.length > 0) {
+    lines.push(`  Hot modules: ${mods.map((m) => `${m.module} (${m.touches})`).join(', ')}`)
+  }
+  if (lines.length === 0) return ''
+  return `[STACK OVERVIEW]\n${lines.join('\n')}\n`
 }
 
 function renderConventions(conventions: SessionContext['conventions']): string {
@@ -77,12 +83,6 @@ function renderConventions(conventions: SessionContext['conventions']): string {
   return `[CONVENTIONS]\n${lines.join('\n')}\n`
 }
 
-function renderHotModules(mods: HotModule[]): string {
-  if (mods.length === 0) return ''
-  const lines = mods.map((m) => `  ${m.module} (${m.touches} commits)`)
-  return `[HOT MODULES — last 30d]\n${lines.join('\n')}\n`
-}
-
 function renderDecisions(decisions: SessionContext['decisions']): string {
   if (decisions.length === 0) return ''
   const lines = decisions.map((d) => {
@@ -90,6 +90,11 @@ function renderDecisions(decisions: SessionContext['decisions']): string {
     return `  ${d.date} — ${d.summary}${trigger}`
   })
   return `[RECENT DECISIONS]\n${lines.join('\n')}\n`
+}
+
+function renderRecentTask(task: SessionContext['recentTask']): string {
+  if (!task) return ''
+  return `[RECENT TASK]\n  ${task.date}: ${task.summary} [${task.module}]\n`
 }
 
 function renderWarnings(warnings: SessionContext['warnings']): string {
@@ -104,9 +109,14 @@ function renderWarnings(warnings: SessionContext['warnings']): string {
 
 type ListByType = (type: string) => Promise<MindrMemory[]>
 
+function byQualityThenRecency(a: MindrMemory, b: MindrMemory): number {
+  const quality = scoreMemoryQuality(b).total - scoreMemoryQuality(a).total
+  return quality !== 0 ? quality : b.createdAt.localeCompare(a.createdAt)
+}
+
 async function fetchConventions(listByType: ListByType): Promise<ConventionProfile[]> {
   const mems = await listByType('convention')
-  mems.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  mems.sort(byQualityThenRecency)
   const latestByLang = new Map<string, ConventionProfile>()
   for (const m of mems) {
     const lang = m.tags.find((t) => t.key === 'language')?.value
@@ -141,10 +151,7 @@ async function fetchDecisions(
 ): Promise<SessionContext['decisions']> {
   const mems = await listByType('decision')
   return mems
-    .sort((a, b) => {
-      const quality = scoreMemoryQuality(b).total - scoreMemoryQuality(a).total
-      return quality !== 0 ? quality : b.createdAt.localeCompare(a.createdAt)
-    })
+    .sort(byQualityThenRecency)
     .slice(0, limit)
     .map((m) => ({
       date: m.metadata?.['date']
@@ -169,7 +176,7 @@ async function fetchWarnings(listByType: ListByType, files?: string[]): Promise<
   }
   const perFile = new Map<string, number>()
   return filtered
-    .sort((a, b) => severityRank(b) - severityRank(a) || a.content.localeCompare(b.content))
+    .sort((a, b) => severityRank(b) - severityRank(a) || byQualityThenRecency(a, b))
     .filter((m) => {
       const file = typeof m.metadata?.['file'] === 'string' ? String(m.metadata['file']) : 'unknown'
       const count = perFile.get(file) ?? 0
@@ -184,6 +191,17 @@ async function fetchWarnings(listByType: ListByType, files?: string[]): Promise<
         : 'unknown',
       text: m.content.replace(/^(TODO|FIXME|HACK|XXX) at [^—]+— /i, ''),
     }))
+}
+
+async function fetchRecentTask(listByType: ListByType): Promise<SessionContext['recentTask']> {
+  const mems = await listByType('context')
+  const latest = mems.sort(byQualityThenRecency)[0]
+  if (!latest) return null
+  return {
+    date: latest.createdAt.slice(0, 10),
+    summary: latest.content.replace(/^Commit\s+[a-f0-9]+:\s*/i, ''),
+    module: latest.tags.find((t) => t.key === 'module')?.value ?? 'root',
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -217,11 +235,12 @@ export async function buildSessionContext(
   }
 
   // Gather all data in parallel
-  const [profiles, hotModules, decisions, warnings] = await Promise.all([
+  const [profiles, hotModules, decisions, warnings, recentTask] = await Promise.all([
     fetchConventions(listByType),
     fetchHotModules(listByType, recentCommitDays),
     fetchDecisions(listByType, recentDecisions),
     fetchWarnings(listByType, files),
+    fetchRecentTask(listByType),
   ])
 
   // Build derived structures
@@ -238,11 +257,11 @@ export async function buildSessionContext(
 
   // Render all sections
   const sections: Record<SectionName, string> = {
-    stack:       renderStack(stack),
-    conventions: renderConventions(conventions),
-    hotModules:  renderHotModules(hotModules),
-    decisions:   renderDecisions(decisions),
-    warnings:    renderWarnings(warnings),
+    stackOverview: renderStackOverview(stack, hotModules),
+    conventions:   renderConventions(conventions),
+    decisions:     renderDecisions(decisions),
+    recentTask:    renderRecentTask(recentTask),
+    warnings:      renderWarnings(warnings),
   }
 
   // If no max_tokens, include all non-empty sections
@@ -283,6 +302,7 @@ export async function buildSessionContext(
     stack,
     conventions,
     decisions,
+    recentTask,
     hotModules,
     warnings,
     summary,

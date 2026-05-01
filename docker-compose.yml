@@ -1,18 +1,42 @@
 # Mindr — one-command local setup
 #
-# Starts Ollama for local embeddings.
-# Mindr itself runs on your host machine (npm install -g mindr).
-# SQLite backend used by default — zero API keys, fully offline.
-#
-# Usage:
+# Default (SQLite + local Ollama embeddings, zero API keys, fully offline):
 #   docker compose up -d
-#   mindr init     # in your project (uses local SQLite + Ollama)
+#   mindr init     # in your project
+#
+# With self-hosted Remembr backend (optional cloud memory store):
+#   docker compose --profile remembr up -d
+#   # Then set storage.backend = "remembr" in .mindr/config.toml
+#   # and remembr.base_url = "http://localhost:8000/api/v1"
+#
+# Run the Mindr CLI from the same compose stack:
+#   docker compose --profile mindr run --rm mindr --help
 
 name: mindr
 
 services:
   # ---------------------------------------------------------------------------
+  # Mindr CLI - optional containerized CLI for running Mindr against this stack
+  # ---------------------------------------------------------------------------
+  mindr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mindr-cli
+    profiles: ["mindr"]
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      MINDR_REMEMBR_BASE_URL: http://remembr:8000/api/v1
+      MINDR_OLLAMA_BASE_URL: http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
   # Ollama — local embedding model (nomic-embed-text, ~270 MB)
+  # Always started. Mindr uses it for semantic search without any API key.
   # ---------------------------------------------------------------------------
   ollama:
     image: ollama/ollama:latest
@@ -44,39 +68,53 @@ services:
     restart: on-failure
 
   # ---------------------------------------------------------------------------
-  # Optional: self-hosted Remembr backend
-  # Uncomment if you are running your own Remembr instance.
-  # See https://github.com/remembr-dev/remembr for setup instructions.
+  # PostgreSQL — backing store for self-hosted Remembr
+  # Only started with: docker compose --profile remembr up -d
   # ---------------------------------------------------------------------------
-  # remembr:
-  #   image: ghcr.io/remembr-dev/remembr:latest
-  #   container_name: mindr-remembr
-  #   ports:
-  #     - "3001:3001"
-  #   environment:
-  #     DATABASE_URL: postgresql://mindr:mindr@postgres:5432/remembr
-  #     SECRET_KEY: change-me-in-production
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #   restart: unless-stopped
-  #
-  # postgres:
-  #   image: postgres:16-alpine
-  #   container_name: mindr-postgres
-  #   environment:
-  #     POSTGRES_DB: remembr
-  #     POSTGRES_USER: mindr
-  #     POSTGRES_PASSWORD: mindr
-  #   volumes:
-  #     - pg_data:/var/lib/postgresql/data
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U mindr"]
-  #     interval: 5s
-  #     timeout: 3s
-  #     retries: 10
-  #   restart: unless-stopped
+  postgres:
+    image: postgres:16-alpine
+    container_name: mindr-postgres
+    profiles: ["remembr"]
+    environment:
+      POSTGRES_DB: remembr
+      POSTGRES_USER: mindr
+      POSTGRES_PASSWORD: mindr
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mindr"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Remembr — self-hosted memory API
+  # Only started with: docker compose --profile remembr up -d
+  # After starting, set in .mindr/config.toml:
+  #   [storage]
+  #   backend = "remembr"
+  #   [remembr]
+  #   base_url = "http://localhost:8000/api/v1"
+  # ---------------------------------------------------------------------------
+  remembr:
+    image: ghcr.io/ai-emart/remembr:latest
+    container_name: mindr-remembr
+    profiles: ["remembr"]
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://mindr:mindr@postgres:5432/remembr
+      SECRET_KEY: change-me-in-production
+      EMBEDDING_PROVIDER: ollama
+      OLLAMA_BASE_URL: http://ollama:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   ollama_data:
-  # pg_data:
+  pg_data:

@@ -1,6 +1,7 @@
 {
   "name": "mindr",
   "version": "0.0.1",
+  "description": "Give AI coding agents persistent memory of your codebase — decisions, conventions, bugs, and debt that compound over time",
   "private": false,
   "type": "module",
   "main": "./dist/index.js",
@@ -13,6 +14,17 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     }
+  },
+  "keywords": ["ai", "coding-agent", "memory", "codebase", "mcp", "claude-code", "codex", "cursor", "aider", "llm", "git", "tree-sitter", "developer-tools"],
+  "license": "MIT",
+  "author": "ai-emart",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ai-emart/mindr"
+  },
+  "homepage": "https://github.com/ai-emart/mindr#readme",
+  "engines": {
+    "node": ">=18"
   },
   "files": [
     "dist"

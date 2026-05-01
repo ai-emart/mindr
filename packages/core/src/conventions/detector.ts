@@ -70,6 +70,82 @@ const EXTRACTORS: Record<string, Array<{ nodeType: string; category: string; nam
   ],
 }
 
+// ---------------------------------------------------------------------------
+// Import ordering detection (TypeScript / JavaScript, text-based)
+// ---------------------------------------------------------------------------
+
+const JS_BUILTINS = new Set([
+  'fs', 'path', 'crypto', 'http', 'https', 'os', 'stream', 'util', 'events',
+  'url', 'net', 'child_process', 'assert', 'buffer', 'readline',
+  'worker_threads', 'vm', 'cluster', 'dns', 'tty', 'zlib', 'timers',
+])
+
+type ImportKind = 'builtin' | 'third-party' | 'local'
+
+function classifyImportSource(src: string): ImportKind {
+  if (src.startsWith('node:') || JS_BUILTINS.has(src.split('/')[0] ?? '')) return 'builtin'
+  if (src.startsWith('.') || src.startsWith('/')) return 'local'
+  return 'third-party'
+}
+
+function detectImportGrouping(src: string): string | null {
+  const kinds: ImportKind[] = []
+  for (const line of src.split('\n')) {
+    const t = line.trim()
+    if (!t.startsWith('import ') && !t.startsWith('import{')) continue
+    const m = t.match(/from\s+['"]([^'"]+)['"]/)
+    if (!m) continue
+    kinds.push(classifyImportSource(m[1]!))
+  }
+  if (kinds.length < 3) return null
+  // Grouped = each kind appears in one contiguous block (no kind reappears after switching away)
+  const seen = new Set<ImportKind>()
+  let last = kinds[0]!
+  seen.add(last)
+  for (const k of kinds.slice(1)) {
+    if (k !== last) {
+      if (seen.has(k)) return 'mixed'
+      seen.add(k)
+      last = k
+    }
+  }
+  return 'grouped'
+}
+
+// ---------------------------------------------------------------------------
+// Error-handling pattern detection (AST-based, integrated into walkNode)
+// ---------------------------------------------------------------------------
+
+function walkNodeForErrorHandling(
+  node: any,
+  langName: string,
+  tally: Record<string, number>,
+): void {
+  if ((langName === 'typescript' || langName === 'javascript') && node.type === 'catch_clause') {
+    // TS typed catch: catch (e: SomeType) or catch (e: unknown)
+    const hasTypeAnnotation = (node.children as any[]).some(
+      (c: any) =>
+        (c.type === 'catch_formal_parameter' || c.type === 'formal_parameter') &&
+        (c.children as any[]).some((cc: any) => cc.type === 'type_annotation'),
+    )
+    const key = hasTypeAnnotation ? 'typed-catch' : 'untyped-catch'
+    tally[key] = (tally[key] ?? 0) + 1
+  }
+  if (langName === 'python' && node.type === 'except_clause') {
+    // except vs except SomeError
+    const hasType = (node.children as any[]).some(
+      (c: any) => c.type !== 'except' && c.type !== ':' && c.type !== 'comment',
+    )
+    const key = hasType ? 'specific-except' : 'bare-except'
+    tally[key] = (tally[key] ?? 0) + 1
+  }
+  for (const child of node.children as any[]) {
+    walkNodeForErrorHandling(child, langName, tally)
+  }
+}
+
+// ---------------------------------------------------------------------------
+
 function firstChildOfTypes(node: any, types: string[]): string | null {
   for (const child of (node.children as any[])) {
     if (types.includes(child.type)) return child.text as string
@@ -134,6 +210,8 @@ export async function detect(
     tallies: Map<string, Record<string, number>>
     fileStyles: Record<string, number>
     testPatterns: Record<string, number>
+    importOrdering: Record<string, number>
+    errorHandling: Record<string, number>
     fileCount: number
     fileCounts: Map<string, number>  // per-language file count for cap
   }>()
@@ -144,6 +222,8 @@ export async function detect(
         tallies: new Map(),
         fileStyles: {},
         testPatterns: {},
+        importOrdering: {},
+        errorHandling: {},
         fileCount: 0,
         fileCounts: new Map(),
       })
@@ -190,12 +270,21 @@ export async function detect(
       state.testPatterns[pattern] = (state.testPatterns[pattern] ?? 0) + 1
     }
 
-    // AST identifier analysis
+    // Import ordering (text-based, only JS/TS)
+    if (langName === 'typescript' || langName === 'javascript') {
+      const ordering = detectImportGrouping(src)
+      if (ordering) {
+        state.importOrdering[ordering] = (state.importOrdering[ordering] ?? 0) + 1
+      }
+    }
+
+    // AST identifier + error handling analysis
     try {
       const parser = new ParserClass()
       parser.setLanguage(language)
       const tree = parser.parse(src)
       walkNode(tree.rootNode, langName, state.tallies)
+      walkNodeForErrorHandling(tree.rootNode, langName, state.errorHandling)
     } catch {
       // Silently skip unparseable files
     }
@@ -245,6 +334,34 @@ export async function detect(
           pattern: style,
           category: 'testFilePattern',
           score: consistencyScore(state.testPatterns),
+          sampleCount: total,
+        })
+      }
+    }
+
+    // Import ordering (JS/TS only)
+    {
+      const style = dominantStyle(state.importOrdering)
+      const total = Object.values(state.importOrdering).reduce((s, n) => s + n, 0)
+      if (style && total >= 3) {
+        conventions.push({
+          pattern: style,
+          category: 'importOrdering',
+          score: consistencyScore(state.importOrdering),
+          sampleCount: total,
+        })
+      }
+    }
+
+    // Error handling patterns
+    {
+      const style = dominantStyle(state.errorHandling)
+      const total = Object.values(state.errorHandling).reduce((s, n) => s + n, 0)
+      if (style && total >= 3) {
+        conventions.push({
+          pattern: style,
+          category: 'errorHandling',
+          score: consistencyScore(state.errorHandling),
           sampleCount: total,
         })
       }
