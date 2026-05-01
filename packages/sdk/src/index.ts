@@ -231,7 +231,7 @@ export interface RegenerateResult {
 // ---------------------------------------------------------------------------
 
 function tagValue(mem: MindrMemory, key: string): string {
-  return mem.tags.find((t) => t.key === key)?.value ?? ''
+  return mem.tags.find((t: MindrTag) => t.key === key)?.value ?? ''
 }
 
 function toDecision(mem: MindrMemory, reversedIds?: Set<string>): Decision {
@@ -371,16 +371,16 @@ export class Mindr {
 
     // JS post-filters
     if (opts.module) {
-      results = results.filter((m) =>
-        m.tags.some((t) => t.key === 'module' && t.value === opts.module),
+      results = results.filter((m: MindrMemory) =>
+        m.tags.some((t: MindrTag) => t.key === 'module' && t.value === opts.module),
       )
     }
     if (opts.since) {
       const since = opts.since
-      results = results.filter((m) => new Date(m.createdAt) >= since)
+      results = results.filter((m: MindrMemory) => new Date(m.createdAt) >= since)
     }
 
-    return results.map((memory): ScoredMemory => {
+    return results.map((memory: MindrMemory): ScoredMemory => {
       const qualityBreakdown = scoreMemoryQuality(memory)
       return { ...memory, qualityScore: qualityBreakdown.total, qualityBreakdown }
     })
@@ -395,27 +395,27 @@ export class Mindr {
     let mems = await queryDecisions(this.backend, limit)
 
     if (opts.module) {
-      mems = mems.filter((m) => m.tags.some((t) => t.key === 'module' && t.value === opts.module))
+      mems = mems.filter((m: MindrMemory) => m.tags.some((t: MindrTag) => t.key === 'module' && t.value === opts.module))
     }
     if (opts.from) {
       const from = opts.from
-      mems = mems.filter((m) => new Date(m.createdAt) >= from)
+      mems = mems.filter((m: MindrMemory) => new Date(m.createdAt) >= from)
     }
     if (opts.to) {
       const to = opts.to
-      mems = mems.filter((m) => new Date(m.createdAt) <= to)
+      mems = mems.filter((m: MindrMemory) => new Date(m.createdAt) <= to)
     }
 
     const reversedMarkers = await this.backend.listByTags([
       { key: 'reversed_decision', value: 'true' },
     ])
-    const reversedIds = new Set(
+    const reversedIds = new Set<string>(
       reversedMarkers
-        .map((m) => m.tags.find((t) => t.key === 'original_decision')?.value)
+        .map((m: MindrMemory) => m.tags.find((t: MindrTag) => t.key === 'original_decision')?.value)
         .filter((v): v is string => v != null),
     )
 
-    return mems.map((m) => toDecision(m, reversedIds))
+    return mems.map((m: MindrMemory) => toDecision(m, reversedIds))
   }
 
   /**
@@ -426,14 +426,14 @@ export class Mindr {
     let mems = await queryDebt(this.backend)
 
     if (opts.module) {
-      mems = mems.filter((m) => m.tags.some((t) => t.key === 'module' && t.value === opts.module))
+      mems = mems.filter((m: MindrMemory) => m.tags.some((t: MindrTag) => t.key === 'module' && t.value === opts.module))
     }
     if (opts.severity) {
-      mems = mems.filter((m) => m.tags.some((t) => t.key === 'severity' && t.value === opts.severity))
+      mems = mems.filter((m: MindrMemory) => m.tags.some((t: MindrTag) => t.key === 'severity' && t.value === opts.severity))
     }
     if (opts.minAge != null) {
       const cutoff = Date.now() - opts.minAge * 86400000
-      mems = mems.filter((m) => new Date(m.createdAt).getTime() <= cutoff)
+      mems = mems.filter((m: MindrMemory) => new Date(m.createdAt).getTime() <= cutoff)
     }
     if (opts.limit != null) {
       mems = mems.slice(0, opts.limit)
@@ -487,7 +487,7 @@ export class Mindr {
     let profiles = await queryConventions(this.backend)
 
     if (opts.language) {
-      profiles = profiles.filter((p) => p.language === opts.language)
+      profiles = profiles.filter((p: ConventionProfile) => p.language === opts.language)
     }
 
     return profiles
@@ -534,9 +534,9 @@ export class Mindr {
       return new Date(Date.now() - millis)
     })()
     const mems = await this.backend.listByTags([{ key: 'type', value: 'metering' }], 1000)
-    const filtered = mems.filter((m) => {
+    const filtered = mems.filter((m: MindrMemory) => {
       const matchesSession = opts.session
-        ? m.sessionId === opts.session || m.tags.some((t) => t.key === 'session' && t.value === opts.session)
+        ? m.sessionId === opts.session || m.tags.some((t: MindrTag) => t.key === 'session' && t.value === opts.session)
         : true
       const matchesWindow = cutoff ? new Date(m.createdAt) >= cutoff : true
       return matchesSession && matchesWindow
@@ -572,7 +572,7 @@ export class Mindr {
   async getStatus(): Promise<MindrStatus> {
     const counts: Record<string, number> = {}
     await Promise.all(
-      MEMORY_TYPES.map(async (type) => {
+      MEMORY_TYPES.map(async (type: string) => {
         const mems = await this.backend.listByTags([{ key: 'type', value: type }])
         counts[type] = mems.length
       }),
