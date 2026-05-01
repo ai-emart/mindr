@@ -17,14 +17,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --dir docs install --no-frozen-lockfile
-      - run: pnpm --dir docs build
+      # docs/ is not a pnpm workspace package, so use npm directly
+      - name: Install docs dependencies
+        working-directory: docs
+        run: npm install
+      - name: Build docs
+        working-directory: docs
+        run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/build
