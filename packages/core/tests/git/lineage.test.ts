@@ -47,12 +47,8 @@ async function initRepo(dir: string): Promise<void> {
   await git.init()
   await git.addConfig('user.name', 'Tester')
   await git.addConfig('user.email', 'tester@example.com')
-  // Create initial commit to establish a branch
-  write(dir, '.gitkeep', '')
-  await git.add('.gitkeep')
-  await git.commit('init')
-  // Ensure we're on main branch (checkout -b creates or switches to main)
-  await git.checkout(['-b', 'main'])
+  // Set HEAD to main branch before first commit
+  await git.raw(['symbolic-ref', 'HEAD', 'refs/heads/main'])
 }
 
 async function commit(
