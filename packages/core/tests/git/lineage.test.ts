@@ -47,6 +47,7 @@ async function initRepo(dir: string): Promise<void> {
   await git.init()
   await git.addConfig('user.name', 'Tester')
   await git.addConfig('user.email', 'tester@example.com')
+  await git.addConfig('init.defaultBranch', 'main')
 }
 
 async function commit(
