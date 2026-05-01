@@ -4,5 +4,5 @@ export default {
   baseUrl: '/mindr/',
   organizationName: 'ai-emart',
   projectName: 'mindr',
-  presets: [['classic', { docs: { routeBasePath: '/', sidebarPath: './sidebars.js' }, blog: false }]],
+  presets: [['classic', { docs: { path: '.', routeBasePath: '/', sidebarPath: './sidebars.js' }, blog: false }]],
 }
