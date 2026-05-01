@@ -412,7 +412,7 @@ export class Mindr {
     const reversedIds = new Set<string>(
       reversedMarkers
         .map((m: MindrMemory) => m.tags.find((t: MindrTag) => t.key === 'original_decision')?.value)
-        .filter((v): v is string => v != null),
+        .filter((v: unknown): v is string => v != null),
     )
 
     return mems.map((m: MindrMemory) => toDecision(m, reversedIds))
