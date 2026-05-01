@@ -2,6 +2,7 @@
 
 exports[`SDK public surface > Mindr class exposes expected instance methods 1`] = `
 [
+  "addDebt",
   "checkpointSession",
   "close",
   "forget",
@@ -16,6 +17,7 @@ exports[`SDK public surface > Mindr class exposes expected instance methods 1`] 
   "query",
   "regenerateAgentsMd",
   "remember",
+  "resolveDebt",
 ]
 `;
 

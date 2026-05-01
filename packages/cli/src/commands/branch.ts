@@ -8,7 +8,7 @@ export interface BranchDeps {
   cwd?: string
 }
 
-export async function runBranchStatus(deps: BranchDeps): Promise<void> {
+export async function runBranchStatus(deps: BranchDeps, opts: { json?: boolean } = {}): Promise<void> {
   const cwd = deps.cwd ?? process.cwd()
   const backend =
     deps.backend ?? getBackend(loadConfig(await getRepoRoot(cwd)))
@@ -23,6 +23,20 @@ export async function runBranchStatus(deps: BranchDeps): Promise<void> {
     return
   }
 
+  // Determine default branch (main or master)
+  let defaultBranch = 'main'
+  try {
+    const remoteHead = (await git.raw(['symbolic-ref', 'refs/remotes/origin/HEAD'])).trim()
+    const parts = remoteHead.split('/')
+    defaultBranch = parts[parts.length - 1] ?? 'main'
+  } catch {
+    // fallback: check if 'master' exists
+    try {
+      await git.raw(['rev-parse', '--verify', 'master'])
+      defaultBranch = 'master'
+    } catch { /* keep 'main' */ }
+  }
+
   // Memories written while on the current branch (by lineage tag).
   const branchMems = await backend.listByTags([
     { key: 'branch_lineage', value: currentBranch },
@@ -35,6 +49,18 @@ export async function runBranchStatus(deps: BranchDeps): Promise<void> {
   })
   const reachableMems = await backend.searchByCommitSet(commits, [currentBranch])
 
+  // Memories from the default branch (shared baseline)
+  let mainMems: Awaited<ReturnType<typeof backend.listByTags>> = []
+  if (currentBranch !== defaultBranch) {
+    mainMems = await backend.listByTags([
+      { key: 'branch_lineage', value: defaultBranch },
+    ])
+  }
+
+  // Shared = memories reachable from current branch AND tagged to default branch
+  const reachableIds = new Set(reachableMems.map((m) => m.id))
+  const sharedCount = mainMems.filter((m) => reachableIds.has(m.id)).length
+
   const lastActivity =
     branchMems.length > 0
       ? branchMems
@@ -44,10 +70,27 @@ export async function runBranchStatus(deps: BranchDeps): Promise<void> {
           .replace('T', ' ')
       : null
 
+  if (opts.json) {
+    process.stdout.write(`${JSON.stringify({
+      currentBranch,
+      defaultBranch,
+      branchMemoryCount: branchMems.length,
+      reachableMemoryCount: reachableMems.length,
+      defaultBranchMemoryCount: mainMems.length,
+      sharedCount,
+      lastActivity,
+    }, null, 2)}\n`)
+    return
+  }
+
   console.log(`BRANCH: ${currentBranch}`)
   console.log(`  Memories on this branch:      ${branchMems.length}`)
   console.log(`  Reachable memories            `)
   console.log(`    (${commits.length} commit${commits.length === 1 ? '' : 's'}, last 90d): ${reachableMems.length}`)
+  if (currentBranch !== defaultBranch) {
+    console.log(`  Shared from ${defaultBranch}:            ${sharedCount}`)
+    console.log(`  Memories on ${defaultBranch}:              ${mainMems.length}`)
+  }
   if (lastActivity) {
     console.log(`  Last activity:                ${lastActivity}`)
   }
@@ -64,7 +107,8 @@ export function addBranchCommands(
   branch
     .command('status')
     .description('Show memory activity for the current git branch')
-    .action(async () => {
-      await runBranchStatus(deps)
+    .option('--json', 'Output as JSON')
+    .action(async (opts: { json?: boolean }) => {
+      await runBranchStatus(deps, opts)
     })
 }

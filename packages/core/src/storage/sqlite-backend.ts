@@ -178,18 +178,25 @@ export class SqliteBackend implements MemoryBackend {
       return rows.map(rowToMemory)
     }
 
+    // AND semantics: every requested tag must appear in the memory's tags array.
+    // A correlated count subquery checks how many of the required tag strings are
+    // present; the row is included only when the count matches the full set.
     const tagStrings = tagsToStrings(tags)
     const placeholders = tagStrings.map(() => '?').join(', ')
     const rows = this.db
       .prepare(
-        `SELECT DISTINCT m.id, m.content, m.role, m.tags, m.metadata, m.created_at, m.session_id
-         FROM memories m, json_each(m.tags) t
-         WHERE t.value IN (${placeholders})
-           AND m.deleted_at IS NULL
+        `SELECT m.id, m.content, m.role, m.tags, m.metadata, m.created_at, m.session_id
+         FROM memories m
+         WHERE m.deleted_at IS NULL
+           AND (
+             SELECT COUNT(*)
+             FROM json_each(m.tags) t
+             WHERE t.value IN (${placeholders})
+           ) >= ?
          ORDER BY m.created_at DESC
          LIMIT ?`,
       )
-      .all(...tagStrings, limit) as MemoryRow[]
+      .all(...tagStrings, tagStrings.length, limit) as MemoryRow[]
     return rows.map(rowToMemory)
   }
 

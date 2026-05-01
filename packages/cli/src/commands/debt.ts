@@ -13,12 +13,16 @@ function ageDays(createdAt: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000))
 }
 
-export async function runDebtList(opts: { severity?: string; module?: string; age?: string }, deps: DebtDeps): Promise<void> {
+export async function runDebtList(opts: { severity?: string; module?: string; age?: string; json?: boolean }, deps: DebtDeps): Promise<void> {
   const backend = await backendFromDeps(deps)
   let memories = await backend.listByTags([{ key: 'type', value: 'debt' }], 500)
   if (opts.severity) memories = memories.filter((m) => m.tags.some((t) => t.key === 'severity' && t.value === opts.severity))
   if (opts.module) memories = memories.filter((m) => m.tags.some((t) => t.key === 'module' && t.value === opts.module))
   if (opts.age) memories = memories.filter((m) => ageDays(m.createdAt) >= Number.parseInt(opts.age ?? '0', 10))
+  if (opts.json) {
+    process.stdout.write(`${JSON.stringify(memories, null, 2)}\n`)
+    return
+  }
   const table = new Table({ head: ['ID', 'Severity', 'Age', 'Location', 'Text'], colWidths: [14, 10, 8, 28, 60], wordWrap: true })
   for (const mem of memories) {
     table.push([
@@ -75,7 +79,7 @@ export async function runDebtReport(deps: DebtDeps): Promise<void> {
 
 export function addDebtCommands(program: Command, deps: DebtDeps = {}): void {
   const debt = program.command('debt').description('Manage technical debt memories')
-  debt.command('list').option('--severity <severity>').option('--module <module>').option('--age <days>').action((opts) => runDebtList(opts, deps))
+  debt.command('list').option('--severity <severity>').option('--module <module>').option('--age <days>').option('--json').action((opts) => runDebtList(opts, deps))
   debt.command('add <text>').requiredOption('--file <path>').option('--severity <severity>').action((text: string, opts) => runDebtAdd(text, opts, deps))
   debt.command('resolve <id>').action((id: string) => runDebtResolve(id, deps))
   debt.command('report').action(() => runDebtReport(deps))

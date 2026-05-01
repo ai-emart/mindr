@@ -176,6 +176,13 @@ describe('Mindr', () => {
     expect(results.length).toBeLessThanOrEqual(2)
   })
 
+  it('query() returns quality scores and breakdowns', async () => {
+    await mindr.remember('quality note', { type: 'note' })
+    const [result] = await mindr.query({ type: 'note', limit: 1 })
+    expect(result!.qualityScore).toBeTypeOf('number')
+    expect(result!.qualityBreakdown.total).toBe(result!.qualityScore)
+  })
+
   // -------------------------------------------------------------------------
   // getDecisions
   // -------------------------------------------------------------------------
@@ -315,6 +322,22 @@ describe('Mindr', () => {
     expect(results).toHaveLength(2)
   })
 
+  it('addDebt() stores a manual debt item', async () => {
+    const item = await mindr.addDebt('Replace temporary retry loop', {
+      file: 'src/billing/invoice.ts',
+      severity: 'high',
+    })
+    expect(item.module).toBe('src')
+    expect(item.severity).toBe('high')
+    expect(item.file).toBe('src/billing/invoice.ts')
+  })
+
+  it('resolveDebt() stores a debt_resolved memory', async () => {
+    const resolved = await mindr.resolveDebt('debt-123')
+    expect(resolved.tags.some((t) => t.key === 'type' && t.value === 'debt_resolved')).toBe(true)
+    expect(resolved.tags.some((t) => t.key === 'original_debt' && t.value === 'debt-123')).toBe(true)
+  })
+
   // -------------------------------------------------------------------------
   // getConventions
   // -------------------------------------------------------------------------
@@ -395,6 +418,27 @@ describe('Mindr', () => {
     const full = await mindr.getSessionContext()
     const trimmed = await mindr.getSessionContext({ max_tokens: 30 })
     expect(trimmed.summary.length).toBeLessThanOrEqual(full.summary.length)
+  })
+
+  it('getContextHealth() returns a score and recommendation', async () => {
+    const result = await mindr.getContextHealth('session-1')
+    expect(result.score).toBeGreaterThanOrEqual(0)
+    expect(['ok', 'consider_checkpoint', 'recommend_fresh_session']).toContain(result.recommendation)
+  })
+
+  it('checkpointSession() stores a session_checkpoint memory', async () => {
+    const checkpoint = await mindr.checkpointSession('session-1')
+    expect(checkpoint.tags.some((t) => t.key === 'type' && t.value === 'session_checkpoint')).toBe(true)
+  })
+
+  it('getStats() returns token metering totals', async () => {
+    await mindr.remember('metered', {
+      tags: [{ key: 'type', value: 'metering' }, { key: 'session', value: 'session-1' }],
+      metadata: { tokensInjected: 12, estimatedSaved: 20 },
+    })
+    const stats = await mindr.getStats({ session: 'session-1', last: '1d' })
+    expect(stats.tokensInjected).toBe(12)
+    expect(stats.range.high).toBe(20)
   })
 
   // -------------------------------------------------------------------------

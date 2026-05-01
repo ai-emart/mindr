@@ -11,6 +11,7 @@ export interface StatusDeps {
   backend?: MemoryBackend
   repoRoot?: string
   config?: MindrConfig
+  json?: boolean
 }
 
 function checkHookInstalled(repoRoot: string): boolean {
@@ -51,6 +52,15 @@ export async function runStatus(deps: StatusDeps = {}): Promise<void> {
   }
 
   const backendType = config?.storage.backend ?? 'unknown'
+  if (deps.json) {
+    process.stdout.write(`${JSON.stringify({
+      backendType,
+      hookInstalled,
+      lastCommit,
+      memoryCounts: counts,
+    }, null, 2)}\n`)
+    return
+  }
   const hookLabel = hookInstalled ? chalk.green('installed') : chalk.yellow('not installed')
   const backendLabel = backendType === 'remembr' ? chalk.blue(backendType) : chalk.dim(backendType)
 
@@ -74,8 +84,9 @@ export function addStatusCommand(program: Command, deps: StatusDeps = {}): void 
   program
     .command('status')
     .description('Show Mindr status and memory counts')
-    .action(async () => {
-      await runStatus(deps).catch((err: unknown) => {
+    .option('--json', 'Output as JSON')
+    .action(async (opts: { json?: boolean }) => {
+      await runStatus({ ...deps, json: opts.json }).catch((err: unknown) => {
         process.stderr.write(`${chalk.red('✗')} ${String(err)}\n`)
         process.exit(1)
       })

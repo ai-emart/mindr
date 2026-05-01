@@ -1,4 +1,5 @@
 import { defineConfig } from 'tsup'
+import { cpSync } from 'fs'
 
 export default defineConfig([
   {
@@ -14,5 +15,8 @@ export default defineConfig([
     dts: false,
     sourcemap: true,
     banner: { js: '#!/usr/bin/env node' },
+    onSuccess: async () => {
+      cpSync('src/ui/static', 'dist/static', { recursive: true })
+    },
   },
 ])

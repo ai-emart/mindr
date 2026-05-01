@@ -7,6 +7,7 @@ import {
   buildSessionContext,
   checkForBugPatterns,
   checkpointSession,
+  estimateSavings,
   estimateTokens,
   scoreContextHealth,
 } from '@ai-emart/mindr-core'
@@ -123,12 +124,20 @@ async function handleGetContext(args: JsonObj, backend: MemoryBackend): Promise<
   })
   const sessionId = typeof args['session_id'] === 'string' ? args['session_id'] : undefined
   if (sessionId) {
+    const sourceMemories = await backend.listByTags([], 50)
+    const savings = estimateSavings(estimateTokens(ctx.summary), sourceMemories.map((m) => m.content))
     await backend.store({
       content: `Metered context injection for ${sessionId}`,
       role: 'system',
       sessionId,
       tags: [{ key: 'type', value: 'metering' }, { key: 'session', value: sessionId }],
-      metadata: { tokensInjected: estimateTokens(ctx.summary), tool: 'mindr:get_context' },
+      metadata: {
+        tokensInjected: savings.injected,
+        estimatedSaved: savings.saved,
+        savingsRange: { low: savings.low, high: savings.high },
+        counterfactualBaseline: savings.baseline,
+        tool: 'mindr:get_context',
+      },
     })
   }
   return ctx.summary

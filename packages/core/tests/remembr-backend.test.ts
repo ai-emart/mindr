@@ -123,4 +123,50 @@ describe('RemembrBackend', () => {
     expect(result.metadata).toEqual({ source: 'cli' })
     expect(result.createdAt).toBe(isoNow)
   })
+
+  it('searchByCommitSet queries commit and lineage tags then post-filters matches', async () => {
+    mockSearch.mockResolvedValue({
+      request_id: 'r3',
+      results: [
+        {
+          episode_id: 'ep-commit',
+          content: 'commit memory',
+          role: 'system',
+          score: 0.9,
+          created_at: isoNow,
+          tags: ['mindr:type:context', 'mindr:git_commit:abc123'],
+        },
+        {
+          episode_id: 'ep-branch',
+          content: 'branch memory',
+          role: 'system',
+          score: 0.8,
+          created_at: isoNow,
+          tags: ['mindr:type:context', 'mindr:branch_lineage:feature/x'],
+        },
+        {
+          episode_id: 'ep-noise',
+          content: 'noise',
+          role: 'system',
+          score: 0.1,
+          created_at: isoNow,
+          tags: ['mindr:type:context', 'mindr:git_commit:zzz'],
+        },
+      ],
+      total: 3,
+      query_time_ms: 2,
+    })
+
+    const backend = new RemembrBackend(config)
+    const results = await backend.searchByCommitSet(
+      ['abc123'],
+      ['feature/x'],
+      [{ key: 'type', value: 'context' }],
+    )
+
+    expect(mockSearch).toHaveBeenCalledWith(expect.objectContaining({
+      tags: ['mindr:git_commit:abc123', 'mindr:branch_lineage:feature/x'],
+    }))
+    expect(results.map((m) => m.id).sort()).toEqual(['ep-branch', 'ep-commit'])
+  })
 })

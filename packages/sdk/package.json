@@ -1,6 +1,7 @@
 {
   "name": "@ai-emart/mindr",
   "version": "0.0.1",
+  "description": "TypeScript SDK for Mindr — give AI coding agents persistent memory of your codebase",
   "private": false,
   "type": "module",
   "main": "./dist/index.js",
@@ -10,6 +11,20 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     }
+  },
+  "keywords": ["mindr", "ai", "coding-agent", "memory", "codebase", "mcp", "llm", "claude", "codex", "cursor"],
+  "license": "MIT",
+  "author": "ai-emart",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ai-emart/mindr"
+  },
+  "homepage": "https://github.com/ai-emart/mindr/tree/main/packages/sdk#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": ["dist"],
   "scripts": {

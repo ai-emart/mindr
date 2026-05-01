@@ -31,6 +31,8 @@ function searchResultToMemory(r: SearchResult): MindrMemory {
 
 export class RemembrBackend implements MemoryBackend {
   private readonly client: RemembrClient
+  // Ephemeral cache so getById() works for memories fetched in the same process lifetime.
+  private readonly cache = new Map<string, MindrMemory>()
 
   constructor(config: MindrConfig) {
     this.client = new RemembrClient({
@@ -56,7 +58,9 @@ export class RemembrBackend implements MemoryBackend {
       tags: params.tags ? tagsToStrings(params.tags) : undefined,
       metadata: params.metadata,
     })
-    return episodeToMemory(ep)
+    const memory = episodeToMemory(ep)
+    this.cache.set(memory.id, memory)
+    return memory
   }
 
   async search(params: SearchParams): Promise<MindrMemory[]> {
@@ -69,11 +73,14 @@ export class RemembrBackend implements MemoryBackend {
       toTime: params.toTime,
       searchMode: 'hybrid',
     })
-    return res.results.map(searchResultToMemory)
+    const memories = res.results.map(searchResultToMemory)
+    for (const m of memories) this.cache.set(m.id, m)
+    return memories
   }
 
   async forget(memoryId: string): Promise<void> {
     await this.client.forgetEpisode(memoryId)
+    this.cache.delete(memoryId)
   }
 
   async listByTags(tags: MindrTag[], limit = 50): Promise<MindrMemory[]> {
@@ -83,29 +90,45 @@ export class RemembrBackend implements MemoryBackend {
       limit,
       searchMode: 'keyword',
     })
-    return res.results.map(searchResultToMemory)
+    const memories = res.results.map(searchResultToMemory)
+    for (const m of memories) this.cache.set(m.id, m)
+    return memories
   }
 
   async searchByCommitSet(
-    _commits: string[],
+    commits: string[],
     lineageFallback: string[],
     additionalTags?: MindrTag[],
   ): Promise<MindrMemory[]> {
-    // Remembr: SHA list is too large for API; use branch_lineage tags as the primary handle.
-    const searchTags = lineageFallback.map((b) => `mindr:branch_lineage:${b}`)
+    const searchTags = [
+      ...commits.map((sha) => `mindr:git_commit:${sha}`),
+      ...lineageFallback.map((b) => `mindr:branch_lineage:${b}`),
+    ]
     if (searchTags.length === 0) return []
 
-    const res = await this.client.search({
-      query: '',
-      tags: searchTags,
-      limit: 200,
-      searchMode: 'keyword',
-    })
-
-    let results = res.results.map(searchResultToMemory)
+    const seen = new Set<string>()
+    const results: MindrMemory[] = []
+    const CHUNK = 50
+    for (let i = 0; i < searchTags.length; i += CHUNK) {
+      const res = await this.client.search({
+        query: '',
+        tags: searchTags.slice(i, i + CHUNK),
+        limit: 200,
+        searchMode: 'keyword',
+      })
+      for (const memory of res.results.map(searchResultToMemory)) {
+        const matchesCommit = memory.tags.some((t) => t.key === 'git_commit' && commits.includes(t.value))
+        const matchesLineage = memory.tags.some((t) => t.key === 'branch_lineage' && lineageFallback.includes(t.value))
+        if (!matchesCommit && !matchesLineage) continue
+        if (seen.has(memory.id)) continue
+        seen.add(memory.id)
+        this.cache.set(memory.id, memory)
+        results.push(memory)
+      }
+    }
 
     if (additionalTags && additionalTags.length > 0) {
-      results = results.filter((m) =>
+      return results.filter((m) =>
         additionalTags.every((at) => m.tags.some((mt) => mt.key === at.key && mt.value === at.value)),
       )
     }
@@ -113,8 +136,7 @@ export class RemembrBackend implements MemoryBackend {
     return results
   }
 
-  // Remembr has no single-episode fetch endpoint; callers should use store() return value.
-  async getById(_memoryId: string): Promise<MindrMemory | null> {
-    return null
+  async getById(memoryId: string): Promise<MindrMemory | null> {
+    return this.cache.get(memoryId) ?? null
   }
 }
