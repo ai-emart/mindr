@@ -1,0 +1,55 @@
+version: 2
+updates:
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # Root dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+    versioning-strategy: increase
+
+  # CLI dependencies
+  - package-ecosystem: "npm"
+    directory: "packages/cli"
+    schedule:
+      interval: "weekly"
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+    versioning-strategy: increase
+
+  # SDK dependencies
+  - package-ecosystem: "npm"
+    directory: "packages/sdk"
+    schedule:
+      interval: "weekly"
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+    versioning-strategy: increase
+
+  # Core dependencies
+  - package-ecosystem: "npm"
+    directory: "packages/core"
+    schedule:
+      interval: "weekly"
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+    versioning-strategy: increase
