@@ -47,7 +47,11 @@ async function initRepo(dir: string): Promise<void> {
   await git.init()
   await git.addConfig('user.name', 'Tester')
   await git.addConfig('user.email', 'tester@example.com')
-  // Rename initial branch to main (git init may create 'master' or other default)
+  // Create initial commit to establish a branch
+  write(dir, '.gitkeep', '')
+  await git.add('.gitkeep')
+  await git.commit('init')
+  // Rename branch to main (git init may create 'master' or other default)
   await git.branch(['-M', 'main'])
 }
 
