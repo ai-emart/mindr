@@ -208,6 +208,10 @@ describe('Cherry-pick SHA reachability', () => {
 
     // Cherry-pick to main — creates a NEW sha
     await git.checkout('main')
+    // Add a small change to ensure cherry-pick creates a different SHA
+    write(dir, 'README.md', '# app\n# cherry-pick\n')
+    await git.add('README.md')
+    await git.commit('prep for cherry-pick')
     await git.raw(['cherry-pick', originalSha])
     const cherryPickedSha = (await git.revparse(['HEAD'])).trim()
 
