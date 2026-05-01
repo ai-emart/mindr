@@ -7,6 +7,6 @@ describe('smoke', () => {
   })
 
   it('exports VERSION', () => {
-    expect(mod.VERSION).toBe('0.0.1')
+    expect(mod.VERSION).toBe('1.0.0')
   })
 })
