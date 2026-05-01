@@ -51,8 +51,8 @@ async function initRepo(dir: string): Promise<void> {
   write(dir, '.gitkeep', '')
   await git.add('.gitkeep')
   await git.commit('init')
-  // Ensure we're on main branch (checkout -b creates/switches to main)
-  await git.checkoutLocalBranch('main')
+  // Ensure we're on main branch (checkout -b creates or switches to main)
+  await git.checkout(['-b', 'main'])
 }
 
 async function commit(
