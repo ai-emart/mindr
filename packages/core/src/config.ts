@@ -31,7 +31,7 @@ const DEFAULTS: MindrConfig = {
 
 function findConfigFile(startDir: string): string | null {
   let dir = startDir
-  while (true) {
+  for (;;) {
     const candidate = join(dir, '.mindr', 'config.toml')
     try {
       readFileSync(candidate)

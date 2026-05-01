@@ -1,6 +1,6 @@
 import type { Command } from 'commander'
 import { getRepoRoot, loadConfig, getBackend } from '@ai-emart/mindr-core'
-import type { MemoryBackend, MindrMemory, MindrTag } from '@ai-emart/mindr-core'
+import type { MemoryBackend, MindrMemory } from '@ai-emart/mindr-core'
 import Table from 'cli-table3'
 import chalk from 'chalk'
 

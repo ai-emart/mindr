@@ -95,7 +95,7 @@ export async function captureStdout(fn: () => Promise<void>): Promise<string> {
     await fn()
   } finally {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(process.stdout as any).write = original
+    (process.stdout as any).write = original
   }
   return output
 }

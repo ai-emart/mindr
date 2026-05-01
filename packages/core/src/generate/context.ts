@@ -225,7 +225,7 @@ export function detectStack(repoRoot: string): StackItem[] {
   if (pyproject) {
     const project = pyproject['project'] as Record<string, unknown> | undefined
     const deps2 = project?.['dependencies'] as string[] | undefined
-    if (Array.isArray(deps2)) allDeps.push(...deps2.map((d) => d.split(/[>=<\[;]/)[0].trim()))
+    if (Array.isArray(deps2)) allDeps.push(...deps2.map((d) => d.split(/[>=<[;]/)[0].trim()))
   }
 
   // Collect unique matches

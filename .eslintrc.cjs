@@ -9,6 +9,14 @@ module.exports = {
   },
   rules: {
     '@typescript-eslint/no-explicit-any': 'error',
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      },
+    ],
   },
   ignorePatterns: ['dist/', 'node_modules/', 'coverage/', '*.cjs'],
 }

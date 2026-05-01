@@ -1,7 +1,9 @@
 // Convention detector: walks a git repo and analyses identifier/file naming styles.
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { readFileSync } from 'fs'
-import { basename, extname, relative } from 'path'
+import { basename, extname } from 'path'
 import { simpleGit } from 'simple-git'
 import {
   getParser,
