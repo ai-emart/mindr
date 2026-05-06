@@ -5,10 +5,10 @@
 AI coding agents are stateless by default — every session starts from zero, re-learning the same codebase, repeating the same mistakes. Mindr fixes this. It gives every agent — Claude Code, Codex, OpenCode, Cursor, Aider — a persistent, structured memory of your codebase that compounds over time.
 
 [![CI](https://github.com/ai-emart/mindr/actions/workflows/ci.yml/badge.svg)](https://github.com/ai-emart/mindr/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/mindr)](https://www.npmjs.com/package/mindr)
+[![npm version](https://img.shields.io/npm/v/mindragent)](https://www.npmjs.com/package/mindragent)
 [![npm version](https://img.shields.io/npm/v/@ai-emart/mindr)](https://www.npmjs.com/package/@ai-emart/mindr)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Node](https://img.shields.io/node/v/mindr)](https://www.npmjs.com/package/mindr)
+[![Node](https://img.shields.io/node/v/mindragent)](https://www.npmjs.com/package/mindragent)
 
 ---
 
@@ -16,7 +16,7 @@ AI coding agents are stateless by default — every session starts from zero, re
 
 ```bash
 # Install
-npm install -g mindr
+npm install -g mindragent
 
 # Set up Mindr in your repo
 cd my-project
@@ -55,7 +55,7 @@ Sample output:
 ## Install
 
 ```bash
-npm install -g mindr
+npm install -g mindragent
 ```
 
 ---
